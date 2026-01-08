@@ -130,8 +130,10 @@ try {
 
 // IMPORTANTE: express-session DEBE estar ANTES de Passport
 // Configurar sesiones
-app.use(
-  session({
+console.log("[Init] Setting up session middleware...");
+try {
+  app.use(
+    session({
     secret:
       process.env.SESSION_SECRET ||
       (() => {
