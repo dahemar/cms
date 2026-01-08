@@ -33,8 +33,22 @@ const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailServic
 console.log("[Init] ✅ Email service loaded");
 
 console.log("[Init] Loading profiles registry...");
-const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
-console.log("[Init] ✅ Profiles registry loaded");
+let getProfileByName, listProfiles, syncProfilesToDb;
+try {
+  const registry = require("./profiles/registry");
+  getProfileByName = registry.getProfileByName;
+  listProfiles = registry.listProfiles;
+  syncProfilesToDb = registry.syncProfilesToDb;
+  console.log("[Init] ✅ Profiles registry loaded");
+} catch (error) {
+  console.error("[Init] ❌ Error loading profiles registry:", error.message);
+  console.error("[Init] Error stack:", error.stack);
+  // Crear funciones stub para evitar crashes
+  getProfileByName = () => null;
+  listProfiles = () => [];
+  syncProfilesToDb = async () => 0;
+  console.log("[Init] ⚠️ Using stub functions for profiles");
+}
 
 console.log("[Init] Loading PrismaSessionStore...");
 const PrismaSessionStore = require("./PrismaSessionStore");
