@@ -3999,6 +3999,16 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
   }
 });
 
+// Manejo de errores global para evitar crashes
+app.use((err, req, res, next) => {
+  console.error("[Error Handler] Unhandled error:", err);
+  console.error("[Error Handler] Stack:", err.stack);
+  res.status(500).json({ 
+    error: "Internal server error",
+    message: process.env.NODE_ENV === "production" ? "An error occurred" : err.message
+  });
+});
+
 // Export handler for Vercel serverless
 module.exports = app;
 
