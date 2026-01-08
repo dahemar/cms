@@ -20,7 +20,6 @@ const session = require("express-session");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const passport = require("passport");
-const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const rateLimit = require("express-rate-limit");
 console.log("[Init] ✅ Basic dependencies loaded");
 
@@ -213,55 +212,6 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Configurar Google OAuth Strategy (solo si está configurado)
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  passport.use(
-    new GoogleStrategy(
-      {
-        clientID: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL || "http://localhost:3000/auth/google/callback",
-      },
-      async (accessToken, refreshToken, profile, done) => {
-        try {
-          // Buscar usuario existente por googleId o email
-          let user = await prisma.user.findFirst({
-            where: {
-              OR: [
-                { googleId: profile.id },
-                { email: profile.emails[0].value },
-              ],
-            },
-          });
-
-          if (user) {
-            // Si el usuario existe pero no tiene googleId, actualizarlo
-            if (!user.googleId) {
-              user = await prisma.user.update({
-                where: { id: user.id },
-                data: { googleId: profile.id, emailVerified: true },
-              });
-            }
-          } else {
-            // Crear nuevo usuario
-            user = await prisma.user.create({
-              data: {
-                email: profile.emails[0].value,
-                googleId: profile.id,
-                emailVerified: true, // Google ya verifica el email
-                password: null, // No hay contraseña para usuarios OAuth
-              },
-            });
-          }
-
-          return done(null, user);
-        } catch (error) {
-          return done(error, null);
-        }
-      }
-    )
-  );
-}
 
 // ==================== CACHE DE CONTENIDO ====================
 // Cache simple en memoria (en producción, usar Redis)
@@ -897,10 +847,10 @@ app.post("/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // Si el usuario no tiene contraseña (es usuario OAuth), no permitir login con contraseña
+    // Si el usuario no tiene contraseña, no permitir login con contraseña
     if (!user.password) {
       return res.status(401).json({ 
-        error: "This account uses Google sign-in. Please use the Google login option." 
+        error: "This account does not have a password set. Please contact an administrator." 
       });
     }
 
@@ -1241,48 +1191,6 @@ app.post("/auth/reset-password", async (req, res) => {
   }
 });
 
-// Google OAuth Routes
-// Siempre registrar las rutas, pero retornar 404 si no está configurado
-app.get("/auth/google", (req, res, next) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    return res.status(404).json({ error: "Google OAuth not configured" });
-  }
-  next();
-}, passport.authenticate("google", {
-  scope: ["profile", "email"],
-}));
-
-app.get("/auth/google/callback", (req, res, next) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    return res.status(404).json({ error: "Google OAuth not configured" });
-  }
-  next();
-}, passport.authenticate("google", { failureRedirect: "/login?error=google_auth_failed" }), async (req, res) => {
-  try {
-    // Crear sesión
-    req.session.userId = req.user.id;
-    req.session.userEmail = req.user.email;
-    req.session.isAdmin = req.user.isAdmin || false;
-    
-    // Guardar sesión explícitamente
-    await new Promise((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) {
-          console.error("[Google OAuth] Error saving session:", err);
-          return reject(err);
-        }
-        resolve();
-      });
-    });
-    
-    // Redirigir al frontend
-    const frontendUrl = process.env.FRONTEND_URL || (isProduction ? `https://${req.get('host')}` : "http://localhost:8000");
-    res.redirect(`${frontendUrl}/admin.html`);
-  } catch (err) {
-    console.error("[Google OAuth] Error in callback:", err);
-    res.redirect("/login?error=session_failed");
-  }
-});
 
 // GET /auth/verify - Verificar si un email está registrado (solo para desarrollo, requiere auth)
 app.get("/auth/verify/:email", requireAuth, async (req, res) => {

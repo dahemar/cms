@@ -211,17 +211,6 @@
         <a href="#" id="forgot-password-link" style="font-size: 11px;">Forgot password?</a>
       </div>
 
-      <!-- Google OAuth Button (only shown if configured) -->
-      <div id="google-auth-container" style="margin-top: 20px; text-align: center; display: block;">
-        <div style="margin: 20px 0; position: relative;">
-          <div style="position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid #000000;"></div>
-          <span style="background: #ffffff; padding: 0 15px; position: relative; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">OR</span>
-        </div>
-        <a href="http://localhost:3000/auth/google" id="google-login-btn" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #000000; border: 1px solid #000000; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; transition: all 0.2s ease;">
-          Sign in with Google
-        </a>
-        <p id="google-oauth-status" style="margin-top: 10px; font-size: 10px; color: #666666; display: none;"></p>
-      </div>
 
       <!-- Forgot Password Form -->
       <form id="forgot-password-form" style="display: none;">
@@ -244,34 +233,6 @@
       let isRegisterMode = false;
       let isForgotPasswordMode = false;
 
-      // Check if Google OAuth is available
-      async function checkGoogleAuth() {
-        try {
-          // Try to access Google OAuth endpoint (will redirect if available)
-          const res = await fetch(`${API_URL}/auth/google`, { 
-            method: 'GET', 
-            redirect: 'manual',
-            credentials: 'include'
-          });
-          // If we get a redirect (302, 301, 307, 308) or the endpoint exists, show the button
-          if (res.status === 302 || res.status === 301 || res.status === 307 || res.status === 308 || res.status === 200) {
-            document.getElementById('google-auth-container').style.display = 'block';
-            document.getElementById('google-oauth-status').style.display = 'none';
-            console.log('Google OAuth is configured');
-          } else {
-            // Google OAuth not configured - hide button or show message
-            document.getElementById('google-auth-container').style.display = 'none';
-            console.log('Google OAuth not configured (status:', res.status, ')');
-          }
-        } catch (err) {
-          // Google OAuth not configured or error - hide button
-          document.getElementById('google-auth-container').style.display = 'none';
-          console.log('Google OAuth not configured:', err.message);
-        }
-      }
-      
-      // Check on page load
-      checkGoogleAuth();
 
       // Show message
       function showMessage(text, type = "success") {
