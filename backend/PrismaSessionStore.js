@@ -28,6 +28,12 @@ class PrismaSessionStore {
       const data = JSON.parse(session.data);
       callback(null, data);
     } catch (error) {
+      // Si la tabla no existe aún, retornar null en lugar de crashear
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        console.warn('[PrismaSessionStore] Session table does not exist yet:', error.message);
+        return callback(null, null);
+      }
+      console.error('[PrismaSessionStore] Error getting session:', error);
       callback(error);
     }
   }
@@ -53,6 +59,13 @@ class PrismaSessionStore {
 
       callback(null);
     } catch (error) {
+      // Si la tabla no existe aún, loguear warning pero no crashear
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        console.warn('[PrismaSessionStore] Session table does not exist yet:', error.message);
+        console.warn('[PrismaSessionStore] Please run: npx prisma migrate deploy');
+        return callback(null); // Continuar sin guardar sesión
+      }
+      console.error('[PrismaSessionStore] Error setting session:', error);
       callback(error);
     }
   }
@@ -64,6 +77,11 @@ class PrismaSessionStore {
       });
       if (callback) callback(null);
     } catch (error) {
+      // Si la tabla no existe, simplemente continuar
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        if (callback) callback(null);
+        return;
+      }
       if (callback) callback(error);
     }
   }
