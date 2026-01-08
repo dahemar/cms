@@ -174,11 +174,12 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProduction ? process.env.COOKIE_SECURE !== "false" : false, // true en producción (requiere HTTPS)
+      secure: isProduction, // true en producción (requiere HTTPS) - siempre true en Vercel
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
       sameSite: isProduction ? "none" : "lax", // "none" para Vercel (requiere secure: true)
       domain: process.env.COOKIE_DOMAIN || undefined, // Dejar undefined para que use el dominio actual
+      path: "/", // Asegurar que la cookie se aplica a todas las rutas
     },
   })
 );
@@ -1241,30 +1242,47 @@ app.post("/auth/reset-password", async (req, res) => {
 });
 
 // Google OAuth Routes
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  // GET /auth/google - Iniciar login con Google
-  app.get(
-    "/auth/google",
-    passport.authenticate("google", {
-      scope: ["profile", "email"],
-    })
-  );
+// Siempre registrar las rutas, pero retornar 404 si no está configurado
+app.get("/auth/google", (req, res, next) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(404).json({ error: "Google OAuth not configured" });
+  }
+  next();
+}, passport.authenticate("google", {
+  scope: ["profile", "email"],
+}));
 
-  // GET /auth/google/callback - Callback de Google OAuth
-  app.get(
-    "/auth/google/callback",
-    passport.authenticate("google", { failureRedirect: "/login?error=google_auth_failed" }),
-    (req, res) => {
-      // Crear sesión
-      req.session.userId = req.user.id;
-      req.session.userEmail = req.user.email;
-      
-      // Redirigir al frontend
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:8000";
-      res.redirect(`${frontendUrl}/admin.html`);
-    }
-  );
-}
+app.get("/auth/google/callback", (req, res, next) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(404).json({ error: "Google OAuth not configured" });
+  }
+  next();
+}, passport.authenticate("google", { failureRedirect: "/login?error=google_auth_failed" }), async (req, res) => {
+  try {
+    // Crear sesión
+    req.session.userId = req.user.id;
+    req.session.userEmail = req.user.email;
+    req.session.isAdmin = req.user.isAdmin || false;
+    
+    // Guardar sesión explícitamente
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error("[Google OAuth] Error saving session:", err);
+          return reject(err);
+        }
+        resolve();
+      });
+    });
+    
+    // Redirigir al frontend
+    const frontendUrl = process.env.FRONTEND_URL || (isProduction ? `https://${req.get('host')}` : "http://localhost:8000");
+    res.redirect(`${frontendUrl}/admin.html`);
+  } catch (err) {
+    console.error("[Google OAuth] Error in callback:", err);
+    res.redirect("/login?error=session_failed");
+  }
+});
 
 // GET /auth/verify - Verificar si un email está registrado (solo para desarrollo, requiere auth)
 app.get("/auth/verify/:email", requireAuth, async (req, res) => {
