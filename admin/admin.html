@@ -1602,10 +1602,11 @@
     <!-- Quill Editor JS -->
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <script>
-      // Detectar si estamos en producción (Vercel) o desarrollo
-      const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? "http://localhost:3000"
-        : window.location.origin; // Usar el mismo dominio en producción
+      // Detectar entorno y configurar URLs dinámicamente
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const API_URL = isLocalhost ? "http://localhost:3000" : window.location.origin;
+      const FRONTEND_BASE_URL = isLocalhost ? "http://localhost:5173" : window.location.origin;
+      
       let editingPostId = null;
       let currentUser = null;
       let quillEditor = null;
@@ -4371,9 +4372,8 @@
           }
           
           // Si es una ruta local (relativa), convertirla a URL del frontend React
-          // En desarrollo: http://localhost:5173, en producción: usar rutas relativas
-          const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-          const frontendBaseUrl = isLocal ? "http://localhost:5173" : "";
+          // Usar la variable global FRONTEND_BASE_URL que se define dinámicamente según el entorno
+          const frontendBaseUrl = typeof FRONTEND_BASE_URL !== 'undefined' ? FRONTEND_BASE_URL : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? "http://localhost:5173" : window.location.origin);
           
           // Si la ruta no empieza con /, asumir que está en /images/
           if (!url.startsWith("/")) {
@@ -4381,14 +4381,14 @@
             if (/^[^\/]+\.(jpg|jpeg|png|gif|webp)$/i.test(url)) {
               const filename = url;
               // Intentar primero en /images/landing/ (común para landing images)
-              return isLocal ? `${frontendBaseUrl}/images/landing/${filename}` : `/images/landing/${filename}`;
+              return `${frontendBaseUrl}/images/landing/${filename}`;
             }
             // Si no, asumir que está en /images/
-            return isLocal ? `${frontendBaseUrl}/images/${url}` : `/images/${url}`;
+            return `${frontendBaseUrl}/images/${url}`;
           }
           
-          // Si ya empieza con /, solo agregar el base URL en desarrollo
-          return isLocal ? `${frontendBaseUrl}${url}` : url;
+          // Si ya empieza con /, solo agregar el base URL
+          return `${frontendBaseUrl}${url}`;
         } catch (err) {
           // Si hay algún error, devolver la URL original o null
           console.error("[convertImgurUrl] Error converting URL:", err, "Original URL:", url);
