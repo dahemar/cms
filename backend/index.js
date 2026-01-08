@@ -969,6 +969,8 @@ app.get("/auth/me", async (req, res) => {
   } : "No session");
   console.log("[GET /auth/me] Cookies header:", req.headers.cookie || "No cookies");
   console.log("[GET /auth/me] Session store type:", sessionStore ? sessionStore.constructor.name : "Memory store");
+  console.log("[GET /auth/me] Request origin:", req.headers.origin || "No origin header");
+  console.log("[GET /auth/me] Request host:", req.headers.host || "No host header");
   
   // Verificar si la tabla Session existe en la base de datos
   if (sessionStore && prisma) {
@@ -977,6 +979,27 @@ app.get("/auth/me", async (req, res) => {
       await prisma.$queryRaw`SELECT 1 FROM "Session" LIMIT 1`;
       const sessionCount = await prisma.$queryRaw`SELECT COUNT(*) as count FROM "Session"`;
       console.log("[GET /auth/me] ✅ Session table exists, count:", sessionCount[0]?.count || 0);
+      
+      // Si hay un sessionID pero no hay sesión en req.session, intentar recuperarla del store
+      if (req.sessionID && !req.session?.userId) {
+        console.log("[GET /auth/me] ⚠️ Session ID exists but no session data, attempting to load from store...");
+        await new Promise((resolve, reject) => {
+          sessionStore.get(req.sessionID, (err, sessionData) => {
+            if (err) {
+              console.error("[GET /auth/me] Error retrieving session from store:", err);
+              return resolve(); // Continuar sin sesión
+            }
+            if (sessionData) {
+              console.log("[GET /auth/me] ✅ Session found in store, restoring to req.session");
+              // Restaurar la sesión
+              Object.assign(req.session, sessionData);
+            } else {
+              console.log("[GET /auth/me] ⚠️ Session NOT found in store for sessionID:", req.sessionID);
+            }
+            resolve();
+          });
+        });
+      }
     } catch (err) {
       if (err.code === 'P2021' || err.message?.includes('does not exist') || err.message?.includes('relation') && err.message?.includes('does not exist')) {
         console.error("[GET /auth/me] ❌ CRITICAL: Session table does NOT exist!");
