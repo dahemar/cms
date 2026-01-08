@@ -78,7 +78,8 @@ app.use(
       secure: isProduction ? process.env.COOKIE_SECURE !== "false" : false, // true en producción (requiere HTTPS)
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
-      sameSite: isProduction ? "strict" : "lax", // Protección CSRF en producción
+      sameSite: isProduction ? "none" : "lax", // "none" para Vercel (requiere secure: true)
+      domain: process.env.COOKIE_DOMAIN || undefined, // Dejar undefined para que use el dominio actual
     },
   })
 );
