@@ -14,14 +14,24 @@ const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles
 const PrismaSessionStore = require("./PrismaSessionStore");
 
 const app = express();
-const prisma = new PrismaClient();
+
+// Inicializar Prisma con manejo de errores
+let prisma;
+try {
+  prisma = new PrismaClient();
+} catch (error) {
+  console.error("[Prisma] Error initializing PrismaClient:", error);
+  throw error; // Si Prisma falla, no podemos continuar
+}
 
 // Inicializar session store con manejo de errores
 let sessionStore;
 try {
   sessionStore = new PrismaSessionStore(prisma);
+  console.log("[Session Store] ✅ PrismaSessionStore initialized successfully");
 } catch (error) {
-  console.error("[Session Store] Error initializing PrismaSessionStore:", error);
+  console.error("[Session Store] ⚠️ Error initializing PrismaSessionStore:", error.message);
+  console.error("[Session Store] Will use memory store as fallback");
   // Continuar sin store (usará memoria por defecto si falla)
   sessionStore = undefined;
 }
