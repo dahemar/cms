@@ -136,9 +136,12 @@ try {
     cors({
       origin: allowedOrigins,
       credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      exposedHeaders: ['Set-Cookie'],
     })
   );
-  console.log("[Init] ✅ CORS configured");
+  console.log("[Init] ✅ CORS configured with credentials support");
   
   // Aumentar límite del body parser para permitir imágenes base64 grandes
   app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
@@ -932,10 +935,21 @@ app.post("/auth/login", async (req, res) => {
       console.error("[Login] ⚠️ Error verifying session (non-critical):", verifyErr);
     }
     
+    // Asegurar que la cookie se envía en la respuesta
+    console.log("[Login] Setting response cookie, sessionID:", req.sessionID);
+    console.log("[Login] Response headers before send:", {
+      'Set-Cookie': res.getHeader('Set-Cookie'),
+      'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials')
+    });
+    
     res.json({
       message: "Login successful",
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, isAdmin: user.isAdmin || false },
+      sessionId: req.sessionID, // Incluir sessionID en la respuesta para debugging
     });
+    
+    // Verificar que la cookie se estableció después de enviar la respuesta
+    console.log("[Login] Response sent, Set-Cookie header:", res.getHeader('Set-Cookie'));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login" });
