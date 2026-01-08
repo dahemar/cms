@@ -250,3 +250,13 @@ model AuditLog {
   @@index([siteId])
   @@index([createdAt])
 }
+
+// Sesiones para express-session (almacenamiento persistente)
+model Session {
+  id        String   @id // sessionId
+  data      String   // JSON stringified session data
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}

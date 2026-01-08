@@ -11,9 +11,11 @@ const rateLimit = require("express-rate-limit");
 const { PrismaClient } = require("@prisma/client");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailService");
 const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
+const PrismaSessionStore = require("./PrismaSessionStore");
 
 const app = express();
 const prisma = new PrismaClient();
+const sessionStore = new PrismaSessionStore(prisma);
 
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
 // We keep a DB mirror so sites can reference a profile via FK, but disk remains the source of truth.
@@ -72,6 +74,7 @@ app.use(
         );
         return "default-dev-secret-change-in-production";
       })(),
+    store: sessionStore, // Usar Prisma para almacenamiento persistente
     resave: false,
     saveUninitialized: false,
     cookie: {
