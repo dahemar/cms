@@ -237,7 +237,10 @@
     </div>
 
     <script>
-      const API_URL = "http://localhost:3000";
+      // Detectar si estamos en producción (Vercel) o desarrollo
+      const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? "http://localhost:3000"
+        : window.location.origin; // Usar el mismo dominio en producción
       let isRegisterMode = false;
       let isForgotPasswordMode = false;
 
