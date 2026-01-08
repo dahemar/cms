@@ -52,3 +52,15 @@ backend/prisma/migrations/*.sql
 # Vercel
 .vercel
 
+# Frontend directories (should be in separate repositories)
+frontend/
+frontend-*/
+react-frontend/
+vite-frontend/
+*.jsx
+*.tsx
+src/
+public/
+dist/
+build/
+
