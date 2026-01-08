@@ -279,29 +279,9 @@ const adminRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Root route
+// Root route - redirect to admin panel
 app.get("/", (req, res) => {
-  res.json({
-    message: "Headless CMS API",
-    version: "1.0.0",
-    endpoints: {
-      admin: "/admin",
-      login: "/login",
-      api: {
-        sites: "/api/sites",
-        sections: "/sections",
-        posts: "/posts",
-        tags: "/tags",
-        thumbnails: "/thumbnails",
-      },
-      auth: {
-        me: "/auth/me",
-        login: "/auth/login",
-        logout: "/auth/logout",
-        register: "/auth/register",
-      },
-    },
-  });
+  res.redirect("/admin");
 });
 
 app.get("/api/pages", (req, res) => {
