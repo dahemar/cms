@@ -180,8 +180,7 @@ try {
       sameSite: isProduction ? "none" : "lax", // "none" para Vercel (requiere secure: true)
       domain: process.env.COOKIE_DOMAIN || undefined, // Dejar undefined para que use el dominio actual
     },
-  })
-  );
+  }));
   console.log("[Init] ✅ Session middleware configured");
 } catch (error) {
   console.error("[Init] ❌ Error setting up session middleware:", error.message);
