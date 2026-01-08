@@ -69,13 +69,18 @@ try {
   console.log("[Prisma] ✅ PrismaClient initialized");
   
   // Inicializar session store con manejo de errores
-  try {
-    sessionStore = new PrismaSessionStore(prisma);
-    console.log("[Session Store] ✅ PrismaSessionStore initialized successfully");
-  } catch (error) {
-    console.error("[Session Store] ⚠️ Error initializing PrismaSessionStore:", error.message);
-    console.error("[Session Store] Will use memory store as fallback");
-    // Continuar sin store (usará memoria por defecto si falla)
+  if (PrismaSessionStore) {
+    try {
+      sessionStore = new PrismaSessionStore(prisma);
+      console.log("[Session Store] ✅ PrismaSessionStore initialized successfully");
+    } catch (error) {
+      console.error("[Session Store] ⚠️ Error initializing PrismaSessionStore:", error.message);
+      console.error("[Session Store] Will use memory store as fallback");
+      // Continuar sin store (usará memoria por defecto si falla)
+      sessionStore = undefined;
+    }
+  } else {
+    console.log("[Session Store] ⚠️ PrismaSessionStore not available, using memory store");
     sessionStore = undefined;
   }
 } catch (error) {
