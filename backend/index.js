@@ -181,11 +181,24 @@ try {
       domain: process.env.COOKIE_DOMAIN || undefined, // Dejar undefined para que use el dominio actual
     },
   })
-);
+  );
+  console.log("[Init] ✅ Session middleware configured");
+} catch (error) {
+  console.error("[Init] ❌ Error setting up session middleware:", error.message);
+  console.error("[Init] Error stack:", error.stack);
+  // Continuar sin sesiones si fallan
+}
 
 // Inicializar Passport (DESPUÉS de express-session)
-app.use(passport.initialize());
-app.use(passport.session());
+console.log("[Init] Setting up Passport...");
+try {
+  app.use(passport.initialize());
+  app.use(passport.session());
+  console.log("[Init] ✅ Passport configured");
+} catch (error) {
+  console.error("[Init] ❌ Error setting up Passport:", error.message);
+  console.error("[Init] Error stack:", error.stack);
+}
 
 // Configurar Passport para serializar/deserializar usuarios
 passport.serializeUser((user, done) => {
