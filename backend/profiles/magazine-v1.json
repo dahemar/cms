@@ -1,0 +1,48 @@
+{
+  "name": "magazine-v1",
+  "description": "Magazine website template with article pages and category listings",
+  "version": "1.0.0",
+  "sectionSchemas": {
+    "article_detail": {
+      "label": "Article Detail Page",
+      "postType": "article",
+      "defaultTemplate": {
+        "blocks": [
+          {
+            "type": "text",
+            "required": true,
+            "width": "full"
+          },
+          {
+            "type": "image",
+            "required": false,
+            "width": "full"
+          },
+          {
+            "type": "text",
+            "required": true,
+            "width": "full"
+          }
+        ]
+      },
+      "allowedBlocks": ["text", "image", "video", "slideshow"],
+      "allowReorder": true
+    },
+    "article_list": {
+      "label": "Article List / Category",
+      "postType": "blog",
+      "defaultTemplate": {
+        "blocks": [
+          {
+            "type": "text",
+            "required": true,
+            "width": "full"
+          }
+        ]
+      },
+      "allowedBlocks": ["text", "image"],
+      "allowReorder": false
+    }
+  }
+}
+

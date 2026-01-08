@@ -1,0 +1,63 @@
+{
+  "name": "portfolio-v1",
+  "description": "Portfolio website template with project detail pages and project index",
+  "version": "1.0.0",
+  "sectionSchemas": {
+    "project_detail": {
+      "label": "Project Detail Page",
+      "postType": "project",
+      "defaultTemplate": {
+        "blocks": [
+          {
+            "type": "text",
+            "required": true,
+            "width": "full"
+          },
+          {
+            "type": "slideshow",
+            "required": false,
+            "width": "full",
+            "settings": {
+              "showArrows": true,
+              "autoplay": false,
+              "interval": 3
+            }
+          },
+          {
+            "type": "video",
+            "required": false,
+            "width": "full"
+          },
+          {
+            "type": "text",
+            "required": true,
+            "width": "full"
+          }
+        ]
+      },
+      "allowedBlocks": ["text", "slideshow", "image", "video"],
+      "allowReorder": true
+    },
+    "project_index": {
+      "label": "Project Index / List",
+      "postType": "blog",
+      "defaultTemplate": {
+        "blocks": [
+          {
+            "type": "image",
+            "required": true,
+            "width": "third"
+          },
+          {
+            "type": "text",
+            "required": true,
+            "width": "two-thirds"
+          }
+        ]
+      },
+      "allowedBlocks": ["image", "text"],
+      "allowReorder": false
+    }
+  }
+}
+

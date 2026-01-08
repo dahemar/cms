@@ -1,0 +1,79 @@
+{
+  "name": "frontend-generic-react@1.0.0",
+  "description": "Generic profile for a React/Vite frontend: landing (single), ordered grids (internal detail + external link), and simple content lists.",
+  "version": "1.0.0",
+  "deprecated": false,
+  "sectionSchemas": {
+    "landing.single": {
+      "label": "Landing (Single Post)",
+      "postType": "landing",
+      "defaultTemplate": {
+        "blocks": [
+          { "type": "slideshow", "required": true, "width": "full" }
+        ]
+      },
+      "allowedBlocks": ["slideshow"],
+      "allowReorder": false
+    },
+    "grid.externalLinkItem": {
+      "label": "Grid Item (External Link)",
+      "postType": "page",
+      "defaultTemplate": {
+        "blocks": [
+          { "type": "image", "required": true, "width": "full" },
+          { "type": "link", "required": true, "width": "full" }
+        ]
+      },
+      "allowedBlocks": ["image", "link"],
+      "allowReorder": false
+    },
+    "grid.internalDetailItem": {
+      "label": "Grid Item (Internal Detail by slug)",
+      "postType": "project",
+      "defaultTemplate": {
+        "blocks": [
+          { "type": "image", "required": true, "width": "full" }
+        ]
+      },
+      "allowedBlocks": ["image", "text", "link"],
+      "allowReorder": false
+    },
+    "detail.media": {
+      "label": "Detail (Media: 2 slideshows + video)",
+      "postType": "project",
+      "defaultTemplate": {
+        "blocks": [
+          { "type": "slideshow", "required": true, "width": "full" },
+          { "type": "slideshow", "required": false, "width": "full" },
+          { "type": "video", "required": false, "width": "full" }
+        ]
+      },
+      "allowedBlocks": ["slideshow", "video", "text", "image", "link"],
+      "allowReorder": true
+    },
+    "content.richTextItem": {
+      "label": "Content Item (Rich Text)",
+      "postType": "page",
+      "defaultTemplate": {
+        "blocks": [
+          { "type": "text", "required": true, "width": "full" }
+        ]
+      },
+      "allowedBlocks": ["text", "image", "video", "slideshow", "link", "embed_instagram", "embed_soundcloud"],
+      "allowReorder": true
+    },
+    "list.linkItem": {
+      "label": "List Item (Link)",
+      "postType": "page",
+      "defaultTemplate": {
+        "blocks": [
+          { "type": "link", "required": true, "width": "full" }
+        ]
+      },
+      "allowedBlocks": ["link"],
+      "allowReorder": false
+    }
+  }
+}
+
+

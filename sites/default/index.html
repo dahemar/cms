@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CMS Frontend</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: #ffffff;
+        padding: 40px 20px;
+        color: #000000;
+        line-height: 1.6;
+      }
+      h1 {
+        text-align: center;
+        margin-bottom: 50px;
+        color: #000000;
+        font-weight: 300;
+        font-size: 32px;
+        letter-spacing: -0.5px;
+        border-bottom: 1px solid #000000;
+        padding-bottom: 20px;
+        max-width: 800px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      #output {
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      .post-card {
+        border: 1px solid #000000;
+        border-radius: 0;
+        padding: 40px;
+        margin-bottom: 40px;
+        background: #ffffff;
+        transition: border-color 0.2s ease;
+      }
+      .post-card:hover {
+        border-color: #333333;
+      }
+      .post-title {
+        font-size: 24px;
+        font-weight: 400;
+        color: #000000;
+        margin-bottom: 20px;
+        letter-spacing: -0.3px;
+      }
+      .post-content {
+        color: #000000;
+        line-height: 1.8;
+        font-size: 14px;
+        margin-top: 20px;
+      }
+      /* Sistema de bloques con columnas (solo desktop) */
+      .blocks-container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .blocks-row {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        width: 100%;
+      }
+      .block-item {
+        width: 100%;
+        box-sizing: border-box;
+      }
+      /* En desktop, aplicar layout de columnas */
+      @media (min-width: 768px) {
+        .blocks-row {
+          flex-direction: row;
+          flex-wrap: nowrap;
+          align-items: flex-start;
+        }
+        .block-item[data-width="full"] {
+          width: 100% !important;
+        }
+        .block-item[data-width="half"] {
+          width: calc(50% - 10px) !important;
+          flex: 0 0 calc(50% - 10px) !important;
+        }
+        .block-item[data-width="third"] {
+          width: calc(33.333% - 14px) !important;
+          flex: 0 0 calc(33.333% - 14px) !important;
+        }
+        .block-item[data-width="two-thirds"] {
+          width: calc(66.666% - 10px) !important;
+          flex: 0 0 calc(66.666% - 10px) !important;
+        }
+      }
+      /* Estilos para slideshow */
+      .slideshow-wrapper {
+        position: relative;
+        width: 100%;
+        margin: 20px 0;
+      }
+      .slideshow-container {
+        position: relative;
+        width: 100%;
+        overflow: hidden;
+      }
+      /* Contenedor con aspect ratio fijo cuando hay dimensiones */
+      .slideshow-container.has-fixed-dimensions {
+        position: relative;
+        width: 100%;
+        padding-bottom: 0; /* Se establecerá dinámicamente */
+      }
+      .slideshow-slide {
+        display: none;
+        width: 100%;
+        position: relative;
+      }
+      .slideshow-slide.active {
+        display: block;
+      }
+      /* Slides con dimensiones fijas */
+      .slideshow-slide[data-image-width][data-image-height] {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .slideshow-slide[data-image-width][data-image-height].active {
+        display: block;
+      }
+      .slideshow-slide img {
+        width: 100%;
+        height: auto;
+        border-radius: 0;
+        margin: 0;
+        border: 1px solid #000000;
+        display: block;
+        object-fit: cover;
+      }
+      /* Si hay dimensiones definidas, aplicar object-fit cover */
+      .slideshow-slide[data-image-width][data-image-height] img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .slideshow-caption {
+        font-size: 12px;
+        color: #666;
+        margin-top: 8px;
+        font-style: italic;
+        text-align: center;
+      }
+      .slideshow-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: #ffffff;
+        border: 1px solid #000000;
+        padding: 15px 20px;
+        font-size: 24px;
+        cursor: pointer;
+        z-index: 10;
+        transition: background 0.2s ease;
+        border-radius: 0;
+      }
+      .slideshow-arrow:hover {
+        background: rgba(0, 0, 0, 0.9);
+      }
+      .slideshow-prev {
+        left: 10px;
+      }
+      .slideshow-next {
+        right: 10px;
+      }
+      .slideshow-indicators {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 15px;
+      }
+      .slideshow-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 1px solid #000000;
+        background: transparent;
+        cursor: pointer;
+        padding: 0;
+        transition: background 0.2s ease;
+      }
+      .slideshow-indicator.active {
+        background: #000000;
+      }
+      .slideshow-indicator:hover {
+        background: #666666;
+      }
+
+      /* Estilos para imágenes y vídeos dentro del contenido del post */
+      #output img,
+      .post-content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 0;
+        margin: 20px 0;
+        border: 1px solid #000000;
+        display: block;
+      }
+      /* Contenedor de vídeos con aspect ratio 16:9 */
+      #output div[id^="youtube-container-"],
+      #output div[style*="margin-bottom: 15px"][style*="position: relative"],
+      #output div[style*="margin: 15px 0"][style*="position: relative"] {
+        position: relative;
+        width: 100%;
+        max-width: 560px;
+        margin: 20px 0;
+        padding-bottom: 56.25%; /* 16:9 aspect ratio (9/16 = 0.5625) */
+        height: 0;
+        overflow: hidden;
+      }
+      
+      #output iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+        border: none;
+      }
+      
+      /* Estilos para embeds de Instagram */
+      #output div[style*="min-height: 400px"] {
+        position: relative;
+        width: 100%;
+        max-width: 540px;
+        margin: 20px 0;
+        min-height: 400px;
+        height: auto;
+        overflow: visible;
+      }
+      
+      #output div[style*="min-height: 400px"] iframe {
+        height: auto;
+        min-height: 400px;
+      }
+      
+      /* Estilos para embeds de SoundCloud en el frontend */
+      #output div[style*="height: 450px"],
+      #output div[style*="height: 166px"] {
+        position: relative !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 20px 0 !important;
+        overflow: visible !important;
+      }
+      
+      #output div[style*="height: 450px"] {
+        height: 450px !important;
+      }
+      
+      #output div[style*="height: 166px"] {
+        height: 166px !important;
+      }
+      
+      #output div[style*="height: 450px"] iframe,
+      #output div[style*="height: 166px"] iframe {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        border-radius: 0 !important;
+        border: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Posts</h1>
+    
+    <!-- Navigation Menu with Sections -->
+    <nav id="sections-nav" style="max-width: 800px; margin: 0 auto 40px auto; padding: 20px; background: #ffffff; border: 1px solid #000000; border-radius: 0;">
+      <div id="sections-nav-list" style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+        <p style="color: #666666; font-size: 12px; margin: 0;">Loading sections...</p>
+      </div>
+    </nav>
+    
+    <div id="output">Loading...</div>
+
+    <script>
+      // Check if using file:// protocol
+      if (window.location.protocol === 'file:') {
+        console.warn('[YouTube Debug] ⚠️ WARNING: Using file:// protocol. YouTube may not work correctly.');
+        console.warn('[YouTube Debug] Use: http://localhost:8001/index.html');
+      }
+      
+      // Function to extract YouTube ID
+      function extractYouTubeId(url) {
+        if (!url) {
+          console.log("[YouTube Debug] extractYouTubeId: Empty URL");
+          return null;
+        }
+        console.log("[YouTube Debug] extractYouTubeId: URL received:", url);
+        const patterns = [
+          /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+          /youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/,
+        ];
+        for (const pattern of patterns) {
+          const match = url.match(pattern);
+          if (match) {
+            console.log("[YouTube Debug] extractYouTubeId: ID extracted:", match[1]);
+            return match[1];
+          }
+        }
+        console.log("[YouTube Debug] extractYouTubeId: Could not extract ID from:", url);
+        return null;
+      }
+
+      // Function to create YouTube iframe with correct configuration
+      function createYouTubeEmbed(videoId, originalUrl) {
+        console.log("[YouTube Debug] createYouTubeEmbed called with:", { videoId, originalUrl });
+        
+        if (!videoId) {
+          console.warn("[YouTube Debug] createYouTubeEmbed: Empty videoId");
+          return "";
+        }
+        
+        // Build embed URL - use youtube-nocookie.com which is more permissive
+        // and add parameters to avoid error 153, including origin
+        const currentOrigin = window.location.origin;
+        const currentHref = window.location.href;
+        const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&origin=${encodeURIComponent(currentOrigin)}`;
+        
+        console.log("[YouTube Debug] createYouTubeEmbed:", {
+          videoId,
+          embedUrl,
+          currentOrigin,
+          currentHref,
+          referrerPolicy: "strict-origin-when-cross-origin",
+          userAgent: navigator.userAgent,
+          referrer: document.referrer
+        });
+        
+        // Generate unique ID for the iframe
+        const iframeId = `youtube-iframe-${videoId}-${Date.now()}`;
+        
+        // Return iframe HTML with referrerpolicy to avoid error 153
+        // Use data attributes to pass information to callback
+        return `
+          <div id="youtube-container-${iframeId}" style="position: relative; width: 100%; max-width: 560px; margin: 20px 0; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+            <iframe 
+              id="${iframeId}"
+              data-video-id="${videoId}"
+              data-original-url="${originalUrl || ''}"
+              src="${embedUrl}" 
+              frameborder="0" 
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+              allowfullscreen 
+              referrerpolicy="strict-origin-when-cross-origin"
+              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 0; border: none;"
+            ></iframe>
+          </div>
+        `;
+      }
+
+      // Function to extract Vimeo ID
+      function extractVimeoId(url) {
+        if (!url) return null;
+        const patterns = [
+          /vimeo\.com\/(?:channels\/[^\/]+\/|groups\/[^\/]+\/videos\/|)(\d+)/, // Any vimeo.com format
+          /player\.vimeo\.com\/video\/(\d+)/, // Direct player URL
+        ];
+        for (const pattern of patterns) {
+          const match = url.match(pattern);
+          if (match) return match[1];
+        }
+        return null;
+      }
+
+      // Function to create Vimeo iframe
+      function createVimeoEmbed(videoId, originalUrl) {
+        if (!videoId) return "";
+        
+        const embedUrl = `https://player.vimeo.com/video/${videoId}`;
+        
+        return `
+          <div style="position: relative; width: 100%; max-width: 560px; margin: 20px 0; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+            <iframe 
+              src="${embedUrl}" 
+              frameborder="0" 
+              allow="autoplay; fullscreen; picture-in-picture" 
+              allowfullscreen 
+              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 0; border: none;"
+            ></iframe>
+          </div>
+        `;
+      }
+
+      // Function to convert Imgur URLs to direct URLs
+      function convertImgurUrl(url) {
+        if (!url) return null;
+        
+        // If already a direct Imgur URL, return as is
+        if (url.includes("i.imgur.com")) {
+          return url;
+        }
+
+        // Convert Imgur URLs to direct URL
+        // Priority: individual posts work better than albums
+        const imgurPatterns = [
+          /imgur\.com\/([a-zA-Z0-9]+)$/, // Individual post: /ID (without /a/ or /gallery/) - PRIORITY
+          /imgur\.com\/a\/([a-zA-Z0-9]+)/, // Album: /a/ID
+          /imgur\.com\/gallery\/([a-zA-Z0-9]+)/, // Gallery: /gallery/ID
+        ];
+
+        for (const pattern of imgurPatterns) {
+          const match = url.match(pattern);
+          if (match) {
+            const imageId = match[1];
+            // Try .jpg first (most common format)
+            return `https://i.imgur.com/${imageId}.jpg`;
+          }
+        }
+
+        // If no match, return original URL
+        return url;
+      }
+
+      // Función para renderizar slideshow desde metadata
+      function renderSlideshowFromMetadata(metadata) {
+        const slides = metadata.slides || [];
+        const autoplay = metadata.autoplay || false;
+        const interval = metadata.interval || 5000;
+        
+        // El frontend decide las dimensiones - aquí usamos valores por defecto o calculamos según el diseño
+        // Puedes ajustar estos valores según tus necesidades de diseño
+        const defaultWidth = 1200;
+        const defaultHeight = 800;
+        const aspectRatio = defaultHeight / defaultWidth;
+        
+        if (slides.length === 0) {
+          return '<p style="color: #999; font-style: italic;">No slides in slideshow.</p>';
+        }
+        
+        const slideshowId = `slideshow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Calcular tamaño del slideshow (máximo 800px de ancho, mantener aspect ratio)
+        const maxWidth = 800;
+        const slideshowWidth = Math.min(maxWidth, window.innerWidth - 40);
+        const slideshowHeight = slideshowWidth * aspectRatio;
+        
+        let html = `<div class="slideshow-wrapper" id="${slideshowId}" data-auto-play="${autoplay}" data-slide-duration="${interval}" style="position: relative; width: 100%; max-width: ${slideshowWidth}px; margin: 20px auto; border: 1px solid #000;">`;
+        html += `<div class="slideshow-container" style="position: relative; width: 100%; padding-bottom: ${aspectRatio * 100}%; overflow: hidden; background: #f0f0f0;">`;
+        
+        slides.forEach((slide, index) => {
+          const activeClass = index === 0 ? 'active' : '';
+          const imgUrl = slide.imageUrl ? convertImgurUrl(slide.imageUrl) : '';
+          const imgStyle = `position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: ${index === 0 ? 'block' : 'none'};`;
+          html += `<div class="slideshow-slide ${activeClass}" data-slide-index="${index}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+            ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" style="${imgStyle}" />` : '<div style="width: 100%; height: 100%; background: #ddd; display: flex; align-items: center; justify-content: center; color: #999;">No image</div>'}
+            ${slide.caption ? `<div class="slideshow-caption" style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; padding: 8px; font-size: 12px; text-align: center;">${escapeHtml(slide.caption)}</div>` : ''}
+          </div>`;
+        });
+        
+        html += '</div>';
+        
+        // Añadir controles de navegación
+        if (slides.length > 1) {
+          html += `<button class="slideshow-arrow slideshow-prev" aria-label="Previous" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5); color: #fff; border: none; padding: 10px 15px; cursor: pointer; font-size: 18px; z-index: 10;">←</button>`;
+          html += `<button class="slideshow-arrow slideshow-next" aria-label="Next" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5); color: #fff; border: none; padding: 10px 15px; cursor: pointer; font-size: 18px; z-index: 10;">→</button>`;
+          
+          // Indicadores
+          html += '<div class="slideshow-indicators" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; z-index: 10;">';
+          slides.forEach((slide, index) => {
+            const activeClass = index === 0 ? 'active' : '';
+            html += `<button class="slideshow-indicator ${activeClass}" data-slide-index="${index}" aria-label="Go to slide ${index + 1}" style="width: 10px; height: 10px; border-radius: 50%; border: 1px solid #000; background: ${index === 0 ? '#000' : 'transparent'}; cursor: pointer; padding: 0;"></button>`;
+          });
+          html += '</div>';
+        }
+        
+        html += '</div>';
+        
+        return html;
+      }
+      
+      // Función para renderizar bloques con sistema de columnas
+      function renderBlocks(blocks) {
+        if (!blocks || blocks.length === 0) {
+          return '';
+        }
+
+        console.log('[Blocks Render] Rendering blocks:', blocks);
+
+        let html = '<div class="blocks-container">';
+        let currentRow = [];
+        let currentRowWidth = 0;
+
+        blocks.forEach((block, index) => {
+          // Asegurar que siempre tengamos un width válido
+          // Si metadata es un string (JSON parseado), parsearlo
+          let metadata = block.metadata;
+          if (typeof metadata === 'string') {
+            try {
+              metadata = JSON.parse(metadata);
+            } catch (e) {
+              console.warn(`[Blocks Render] Failed to parse metadata for block ${index}:`, e);
+              metadata = null;
+            }
+          }
+          
+          const width = (metadata && metadata.width) || 'full';
+          console.log(`[Blocks Render] Block ${index}: type=${block.type}, width=${width}`, {
+            rawMetadata: block.metadata,
+            parsedMetadata: metadata,
+            width: width
+          });
+          let blockWidth = 1; // full width = 1
+
+          if (width === 'half') blockWidth = 0.5;
+          else if (width === 'third') blockWidth = 0.333;
+          else if (width === 'two-thirds') blockWidth = 0.666;
+
+          // Si el bloque es full width o la fila actual + este bloque > 1, cerrar la fila anterior
+          if (width === 'full' || (currentRowWidth + blockWidth > 1 && currentRow.length > 0)) {
+            if (currentRow.length > 0) {
+              html += '<div class="blocks-row">';
+              currentRow.forEach(blockHtml => {
+                html += blockHtml;
+              });
+              html += '</div>';
+              currentRow = [];
+              currentRowWidth = 0;
+            }
+          }
+
+          // Renderizar el bloque según su tipo
+          let blockHtml = '';
+          if (block.type === 'text') {
+            blockHtml = `<div class="block-item" data-width="${width}">${block.content || ''}</div>`;
+          } else if (block.type === 'image') {
+            // Parsear metadata si es string
+            let imageMetadata = block.metadata;
+            if (typeof imageMetadata === 'string') {
+              try {
+                imageMetadata = JSON.parse(imageMetadata);
+              } catch (e) {
+                imageMetadata = null;
+              }
+            }
+            const caption = (imageMetadata && imageMetadata.caption) ? `<p style="font-size: 12px; color: #666; margin-top: 8px; font-style: italic;">${escapeHtml(imageMetadata.caption)}</p>` : '';
+            const imgHtml = block.content ? createImageWithFallback(block.content, '', 'max-width: 100%; height: auto; border-radius: 0; margin: 0; border: 1px solid #000000;') : '';
+            blockHtml = `<div class="block-item" data-width="${width}">${imgHtml}${caption}</div>`;
+          } else if (block.type === 'video') {
+            let videoHtml = '';
+            if (block.content) {
+              const youtubeId = extractYouTubeId(block.content);
+              const vimeoId = extractVimeoId(block.content);
+              if (youtubeId) {
+                videoHtml = createYouTubeEmbed(youtubeId, block.content);
+              } else if (vimeoId) {
+                videoHtml = createVimeoEmbed(vimeoId, block.content);
+              }
+            }
+            blockHtml = `<div class="block-item" data-width="${width}">${videoHtml}</div>`;
+          } else if (block.type === 'slideshow') {
+            // Parsear metadata si es string
+            let slideshowMetadata = block.metadata;
+            if (typeof slideshowMetadata === 'string') {
+              try {
+                slideshowMetadata = JSON.parse(slideshowMetadata);
+              } catch (e) {
+                slideshowMetadata = null;
+              }
+            }
+            const images = (slideshowMetadata && slideshowMetadata.images) || [];
+            const config = (slideshowMetadata && slideshowMetadata.slideshowConfig) || {};
+            const showArrows = config.showArrows !== undefined ? config.showArrows : true;
+            const arrowStyle = config.arrowStyle || 'arrows';
+            const autoPlay = config.autoPlay !== undefined ? config.autoPlay : false;
+            const slideDuration = config.slideDuration || 3;
+            // Usar dimensiones por defecto si no están definidas
+            const imageWidth = config.imageWidth || 1200;
+            const imageHeight = config.imageHeight || 800;
+            
+            const slideshowId = `slideshow-${Date.now()}-${index}`;
+            
+            // Calcular aspect ratio si hay dimensiones definidas
+            const aspectRatio = imageHeight / imageWidth;
+            const containerClass = imageWidth && imageHeight ? 'has-fixed-dimensions' : '';
+            const containerStyle = imageWidth && imageHeight 
+              ? `position: relative; width: 100%; padding-bottom: ${aspectRatio * 100}%;`
+              : '';
+            
+            // Crear HTML del slideshow
+            let slideshowHtml = `<div class="slideshow-wrapper" id="${slideshowId}" data-auto-play="${autoPlay}" data-slide-duration="${slideDuration * 1000}">`;
+            slideshowHtml += `<div class="slideshow-container ${containerClass}" style="${containerStyle}">`;
+            
+            images.forEach((img, imgIndex) => {
+              // Aplicar dimensiones unificadas - siempre usar object-fit cover
+              const imgStyle = imageWidth && imageHeight
+                ? `width: 100%; height: 100%; border-radius: 0; margin: 0; border: 1px solid #000000; display: block; object-fit: cover; position: absolute; top: 0; left: 0;`
+                : `width: 100%; height: auto; border-radius: 0; margin: 0; border: 1px solid #000000; display: block; object-fit: cover;`;
+              
+              const imgHtml = img.url ? createImageWithFallback(img.url, '', imgStyle) : '';
+              const caption = img.caption ? `<div class="slideshow-caption">${escapeHtml(img.caption)}</div>` : '';
+              const activeClass = imgIndex === 0 ? 'active' : '';
+              const slideDataAttrs = imageWidth && imageHeight 
+                ? `data-image-width="${imageWidth}" data-image-height="${imageHeight}"`
+                : '';
+              slideshowHtml += `<div class="slideshow-slide ${activeClass}" data-slide-index="${imgIndex}" ${slideDataAttrs}>${imgHtml}${caption}</div>`;
+            });
+            
+            slideshowHtml += '</div>';
+            
+            // Añadir flechas de navegación si está habilitado
+            if (showArrows && images.length > 1) {
+              const arrowSymbols = {
+                'arrows': { left: '←', right: '→' },
+                'chevrons': { left: '‹', right: '›' },
+                'circles': { left: '◯', right: '◯' },
+                'triangles': { left: '◀', right: '▶' }
+              };
+              const arrows = arrowSymbols[arrowStyle] || arrowSymbols['arrows'];
+              slideshowHtml += `<button class="slideshow-arrow slideshow-prev" aria-label="Previous">${arrows.left}</button>`;
+              slideshowHtml += `<button class="slideshow-arrow slideshow-next" aria-label="Next">${arrows.right}</button>`;
+            }
+            
+            // Indicadores de slide (opcional, se puede añadir después)
+            if (images.length > 1) {
+              slideshowHtml += '<div class="slideshow-indicators">';
+              images.forEach((img, imgIndex) => {
+                const activeClass = imgIndex === 0 ? 'active' : '';
+                slideshowHtml += `<button class="slideshow-indicator ${activeClass}" data-slide-index="${imgIndex}" aria-label="Go to slide ${imgIndex + 1}"></button>`;
+              });
+              slideshowHtml += '</div>';
+            }
+            
+            slideshowHtml += '</div>';
+            blockHtml = `<div class="block-item" data-width="${width}">${slideshowHtml}</div>`;
+          } else if (block.type === 'embed_instagram' || block.type === 'embed_soundcloud') {
+            blockHtml = `<div class="block-item" data-width="${width}">${block.content || ''}</div>`;
+          } else {
+            // Tipo desconocido, renderizar como HTML
+            blockHtml = `<div class="block-item" data-width="${width}">${block.content || ''}</div>`;
+          }
+
+          if (width === 'full') {
+            html += blockHtml;
+          } else {
+            currentRow.push(blockHtml);
+            currentRowWidth += blockWidth;
+          }
+        });
+
+        // Cerrar la última fila si hay bloques pendientes
+        if (currentRow.length > 0) {
+          html += '<div class="blocks-row">';
+          currentRow.forEach(blockHtml => {
+            html += blockHtml;
+          });
+          html += '</div>';
+        }
+
+        html += '</div>';
+        console.log('[Blocks Render] Final HTML length:', html.length);
+        return html;
+      }
+
+      // Función helper para escapar HTML
+      function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Function to create image with fallback to multiple formats
+      function createImageWithFallback(imageUrl, alt, styles) {
+        if (!imageUrl) return "";
+        
+        // If it's an Imgur album, try multiple formats
+        if (imageUrl.includes("imgur.com/a/") || imageUrl.includes("imgur.com/gallery/")) {
+          const match = imageUrl.match(/imgur\.com\/(?:a|gallery)\/([a-zA-Z0-9]+)/);
+          if (match) {
+            const imageId = match[1];
+            const formats = ['jpg', 'png', 'gif', 'webp'];
+            // Create multiple sources to try different formats
+            return `<img src="https://i.imgur.com/${imageId}.jpg" alt="${alt}" style="${styles}" onerror="this.onerror=null; this.src='https://i.imgur.com/${imageId}.png'; this.onerror=function(){this.onerror=null; this.src='https://i.imgur.com/${imageId}.gif'; this.onerror=function(){this.style.display='none'; console.error('Could not load image from Imgur album. Use the direct URL of the specific image.');};};" />`;
+          }
+        }
+        
+        // For direct URLs or others, use directly
+        const convertedUrl = convertImgurUrl(imageUrl);
+        return `<img src="${convertedUrl}" alt="${alt}" style="${styles}" onerror="this.style.display='none'; console.error('Error loading image:', '${convertedUrl}');" />`;
+      }
+
+      let sections = [];
+      let selectedSectionId = null;
+
+      // Site ID - This should match the site slug "default" created in seed.js
+      // In production, this could be loaded from a config file or environment variable
+      
+      // Cargar post individual por slug
+      async function loadPostBySlug(slug) {
+        try {
+          const url = `http://localhost:3000/posts?slug=${encodeURIComponent(slug)}&_t=${Date.now()}`;
+          const res = await fetch(url, {
+            cache: 'no-store',
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
+          });
+          
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          
+          const data = await res.json();
+          const posts = data.posts || data;
+          const post = Array.isArray(posts) ? posts[0] : posts;
+          
+          if (!post) {
+            document.getElementById("output").innerHTML = `<p style="color: red;">Post not found.</p>`;
+            return;
+          }
+          
+          // Renderizar el post individual
+          renderSinglePost(post);
+          
+          // Actualizar URL sin recargar la página
+          window.history.pushState({ post: post.id }, '', `#post/${slug}`);
+        } catch (err) {
+          console.error("Error loading post:", err);
+          document.getElementById("output").innerHTML = `<p style="color: red;">Error loading post: ${err.message}</p>`;
+        }
+      }
+      
+      // Renderizar un post individual
+      function renderSinglePost(post) {
+        const outputEl = document.getElementById("output");
+        
+        const imageHtml = post.imageUrl 
+          ? createImageWithFallback(post.imageUrl, post.title, "max-width: 100%; height: auto; border-radius: 0; margin: 20px 0; border: 1px solid #000000;")
+          : "";
+        
+        // Embedded YouTube video
+        let youtubeHtml = "";
+        if (post.youtubeUrl) {
+          const videoId = extractYouTubeId(post.youtubeUrl);
+          if (videoId) {
+            youtubeHtml = createYouTubeEmbed(videoId, post.youtubeUrl);
+          }
+        }
+        
+        // Embedded Vimeo video
+        let vimeoHtml = "";
+        if (post.vimeoUrl) {
+          const videoId = extractVimeoId(post.vimeoUrl);
+          if (videoId) {
+            vimeoHtml = createVimeoEmbed(videoId, post.vimeoUrl);
+          }
+        }
+        
+        // Renderizar contenido
+        // Preferir siempre bloques (incluyendo slideshow como bloque).
+        // Mantener fallback legacy para posts antiguos type=slideshow sin bloques.
+        let contentHtml = '';
+        if (post.blocks && post.blocks.length > 0) {
+          contentHtml = renderBlocks(post.blocks);
+        } else if (post.type === 'slideshow' && post.metadata) {
+          contentHtml = renderSlideshowFromMetadata(post.metadata);
+        } else {
+          contentHtml = `<div class="post-content">${post.content || ''}</div>`;
+        }
+        
+        // Botón para volver
+        const backButton = `<div style="margin-bottom: 30px;"><a href="#" onclick="window.location.hash=''; handleHashNavigation(); return false;" style="display: inline-block; padding: 10px 20px; background: #ffffff; color: #000000; border: 1px solid #000000; text-decoration: none; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; transition: all 0.2s ease;" onmouseover="this.style.background='#000000'; this.style.color='#ffffff';" onmouseout="this.style.background='#ffffff'; this.style.color='#000000';">← Back</a></div>`;
+        
+        outputEl.innerHTML = backButton + `
+          <div class="post-card">
+            ${imageHtml}
+            ${youtubeHtml}
+            ${vimeoHtml}
+            <div class="post-title">${escapeHtml(post.title)}</div>
+            ${contentHtml}
+          </div>
+        `;
+        
+        // Inicializar slideshows después de insertar HTML
+        setTimeout(function() {
+          initSlideshows();
+        }, 100);
+        
+        // Inicializar YouTube iframes
+        setTimeout(function() {
+          const youtubeIframes = document.querySelectorAll('iframe[data-video-id]');
+          youtubeIframes.forEach(function(iframe) {
+            const videoId = iframe.getAttribute('data-video-id');
+            const originalUrl = iframe.getAttribute('data-original-url');
+            const iframeId = iframe.id;
+            
+            iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+            
+            iframe.addEventListener('load', function() {
+              console.log('[YouTube Debug] Iframe loaded successfully:', iframeId);
+            });
+            
+            iframe.addEventListener('error', function() {
+              console.error('[YouTube Debug] Iframe error:', iframeId);
+            });
+          });
+        }, 200);
+      }
+      
+      // Manejar navegación con hash
+      function handleHashNavigation() {
+        const hash = window.location.hash;
+        if (hash && hash.startsWith('#post/')) {
+          const slug = hash.substring(6); // Remover '#post/'
+          loadPostBySlug(slug);
+        } else {
+          // Cargar posts normales
+          loadPosts();
+        }
+      }
+      
+      // Escuchar cambios en el hash
+      window.addEventListener('hashchange', handleHashNavigation);
+      
+      // Load sections
+      async function loadSections() {
+        try {
+          console.log("Loading sections from API...");
+          const res = await fetch(`http://localhost:3000/sections`);
+          if (res.ok) {
+            sections = await res.json();
+            // Filtrar secciones "detailPage" (aunque el backend ya las filtra)
+            sections = sections.filter(s => s.postType !== "detailPage");
+            console.log("Sections loaded:", sections.length, sections);
+            renderSectionsNav();
+            // Después de cargar secciones, manejar la navegación
+            handleHashNavigation();
+          } else {
+            console.error("Failed to load sections. Status:", res.status);
+            handleHashNavigation();
+          }
+        } catch (err) {
+          console.error("Error loading sections:", err);
+          handleHashNavigation();
+        }
+      }
+
+      // Render sections navigation
+      function renderSectionsNav() {
+        const container = document.getElementById("sections-nav-list");
+        if (!container) {
+          console.error("sections-nav-list container not found");
+          return;
+        }
+        
+        if (!sections || sections.length === 0) {
+          console.warn("No sections loaded");
+          container.innerHTML = "<p style='color: #666666; font-size: 12px;'>No sections available</p>";
+          return;
+        }
+        
+        // Sort sections: top-level first, then children
+        const topLevelSections = sections.filter(s => !s.parentId).sort((a, b) => a.order - b.order);
+        
+        if (topLevelSections.length === 0) {
+          container.innerHTML = "<p style='color: #666666; font-size: 12px;'>No sections available</p>";
+          return;
+        }
+        
+        let html = "";
+        topLevelSections.forEach(section => {
+          html += `<a href="#" onclick="selectSection(${section.id}); return false;" class="section-nav-item" data-section-id="${section.id}" style="padding: 10px 20px; background: #ffffff; color: #000000; text-decoration: none; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #000000; transition: all 0.2s ease; cursor: pointer;" onmouseover="this.style.background='#000000'; this.style.color='#ffffff';" onmouseout="if(this.classList.contains('active')) { this.style.background='#000000'; this.style.color='#ffffff'; } else { this.style.background='#ffffff'; this.style.color='#000000'; }">${escapeHtml(section.name)}</a>`;
+          
+          // Render children if they exist
+          const children = sections.filter(s => s.parentId === section.id).sort((a, b) => a.order - b.order);
+          children.forEach(child => {
+            html += `<a href="#" onclick="selectSection(${child.id}); return false;" class="section-nav-item" data-section-id="${child.id}" style="padding: 10px 20px; background: #ffffff; color: #000000; text-decoration: none; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #000000; transition: all 0.2s ease; cursor: pointer;" onmouseover="this.style.background='#000000'; this.style.color='#ffffff';" onmouseout="if(this.classList.contains('active')) { this.style.background='#000000'; this.style.color='#ffffff'; } else { this.style.background='#ffffff'; this.style.color='#000000'; }">${escapeHtml(child.name)}</a>`;
+          });
+        });
+        
+        container.innerHTML = html;
+        console.log("Sections navigation rendered:", topLevelSections.length, "sections");
+      }
+
+      // Cargar thumbnails de una sección
+      async function loadThumbnails(sectionId) {
+        try {
+          const url = `http://localhost:3000/thumbnails?sectionId=${sectionId}&_t=${Date.now()}`;
+          const res = await fetch(url, {
+            cache: 'no-store',
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
+          });
+          
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          
+          const thumbnails = await res.json();
+          renderThumbnails(thumbnails);
+        } catch (err) {
+          console.error("Error loading thumbnails:", err);
+          document.getElementById("output").innerHTML = `<p style="color: red;">Error loading thumbnails: ${err.message}</p>`;
+        }
+      }
+      
+      // Renderizar thumbnails
+      function renderThumbnails(thumbnails) {
+        const outputEl = document.getElementById("output");
+        
+        if (!thumbnails || thumbnails.length === 0) {
+          outputEl.innerHTML = "<p>No thumbnails available.</p>";
+          return;
+        }
+        
+        // Crear grid de thumbnails
+        outputEl.innerHTML = `
+          <div class="thumbnails-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 30px; margin-top: 20px;">
+            ${thumbnails.map(thumb => {
+              const detailUrl = thumb.detailPost ? `#post/${thumb.detailPost.slug}` : '#';
+              return `
+                <a href="${detailUrl}" onclick="loadPostBySlug('${thumb.detailPost.slug}'); return false;" class="thumbnail-card" style="display: block; text-decoration: none; color: #000000; border: 1px solid #000000; padding: 20px; transition: all 0.2s ease; cursor: pointer;" onmouseover="this.style.borderColor='#333333'; this.style.transform='translateY(-2px)';" onmouseout="this.style.borderColor='#000000'; this.style.transform='translateY(0)';">
+                  <div style="width: 100%; height: 200px; background: #f0f0f0; border: 1px solid #ddd; margin-bottom: 15px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <img src="${thumb.imageUrl}" alt="${escapeHtml(thumb.title)}" style="max-width: 100%; max-height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.parentElement.innerHTML='<span style=\\'color: #999; font-size: 11px;\\'>No image</span>';" />
+                  </div>
+                  <h3 style="margin: 0 0 10px 0; font-size: 16px; font-weight: 400; letter-spacing: -0.2px;">${escapeHtml(thumb.title)}</h3>
+                  ${thumb.description ? `<p style="margin: 0; font-size: 12px; color: #666; line-height: 1.5;">${escapeHtml(thumb.description)}</p>` : ''}
+                </a>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+      
+      // Select section and filter posts
+      function selectSection(sectionId) {
+        selectedSectionId = sectionId;
+        
+        // Update active state in navigation
+        document.querySelectorAll('.section-nav-item').forEach(item => {
+          item.classList.remove('active');
+          item.style.background = '#ffffff';
+          item.style.color = '#000000';
+        });
+        
+        const activeItem = document.querySelector(`.section-nav-item[data-section-id="${sectionId}"]`);
+        if (activeItem) {
+          activeItem.classList.add('active');
+          activeItem.style.background = '#000000';
+          activeItem.style.color = '#ffffff';
+        }
+        
+        // Load posts for this section (o thumbnails si es de tipo "thumbnails")
+        loadPosts();
+      }
+
+      // Escape HTML
+      function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Función para inicializar slideshows
+      function initSlideshows() {
+        const slideshows = document.querySelectorAll('.slideshow-wrapper');
+        slideshows.forEach(slideshow => {
+          const slides = slideshow.querySelectorAll('.slideshow-slide');
+          if (slides.length <= 1) return; // No necesita slideshow si solo hay una imagen
+          
+          let currentIndex = 0;
+          const autoPlay = slideshow.dataset.autoPlay === 'true';
+          const slideDuration = parseInt(slideshow.dataset.slideDuration) || 3000;
+          let autoPlayInterval = null;
+          
+          // Función para mostrar un slide específico
+          function showSlide(index) {
+            slides.forEach((slide, i) => {
+              slide.classList.remove('active');
+              if (i === index) {
+                slide.classList.add('active');
+              }
+            });
+            
+            // Actualizar indicadores
+            const indicators = slideshow.querySelectorAll('.slideshow-indicator');
+            indicators.forEach((indicator, i) => {
+              indicator.classList.remove('active');
+              if (i === index) {
+                indicator.classList.add('active');
+              }
+            });
+            
+            currentIndex = index;
+          }
+          
+          // Función para siguiente slide
+          function nextSlide() {
+            const nextIndex = (currentIndex + 1) % slides.length;
+            showSlide(nextIndex);
+          }
+          
+          // Función para slide anterior
+          function prevSlide() {
+            const prevIndex = (currentIndex - 1 + slides.length) % slides.length;
+            showSlide(prevIndex);
+          }
+          
+          // Event listeners para flechas
+          const prevBtn = slideshow.querySelector('.slideshow-prev');
+          const nextBtn = slideshow.querySelector('.slideshow-next');
+          
+          if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+              prevSlide();
+              resetAutoPlay();
+            });
+          }
+          
+          if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+              nextSlide();
+              resetAutoPlay();
+            });
+          }
+          
+          // Event listeners para indicadores
+          const indicators = slideshow.querySelectorAll('.slideshow-indicator');
+          indicators.forEach((indicator, index) => {
+            indicator.addEventListener('click', () => {
+              showSlide(index);
+              resetAutoPlay();
+            });
+          });
+          
+          // Función para resetear auto-play
+          function resetAutoPlay() {
+            if (autoPlayInterval) {
+              clearInterval(autoPlayInterval);
+            }
+            if (autoPlay) {
+              startAutoPlay();
+            }
+          }
+          
+          // Función para iniciar auto-play
+          function startAutoPlay() {
+            if (autoPlay && slides.length > 1) {
+              autoPlayInterval = setInterval(() => {
+                nextSlide();
+              }, slideDuration);
+            }
+          }
+          
+          // Iniciar auto-play si está habilitado
+          if (autoPlay) {
+            startAutoPlay();
+          }
+          
+          // Pausar auto-play al hacer hover (opcional)
+          slideshow.addEventListener('mouseenter', () => {
+            if (autoPlayInterval) {
+              clearInterval(autoPlayInterval);
+            }
+          });
+          
+          slideshow.addEventListener('mouseleave', () => {
+            if (autoPlay) {
+              startAutoPlay();
+            }
+          });
+        });
+      }
+
+      // Load posts (o thumbnails si la sección es de tipo "thumbnails")
+        async function loadPosts() {
+          // Verificar si la sección seleccionada es de tipo "thumbnails"
+          if (selectedSectionId) {
+            const section = sections.find(s => s.id === selectedSectionId);
+            if (section && section.postType === "thumbnails") {
+              // Cargar thumbnails en lugar de posts
+              await loadThumbnails(selectedSectionId);
+              return;
+            }
+          }
+          
+          const url = selectedSectionId
+            ? `http://localhost:3000/posts?sectionId=${selectedSectionId}`
+            : `http://localhost:3000/posts`;
+        
+        // Añadir timestamp para evitar cache del navegador
+        const urlWithCacheBust = `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+        
+        fetch(urlWithCacheBust, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            // El backend devuelve { posts, pagination }
+            const posts = data.posts || data;
+            
+            if (!Array.isArray(posts) || posts.length === 0) {
+              document.getElementById("output").innerHTML = "<p>No published posts.</p>";
+              return;
+            }
+          
+          // Change from plain text to HTML to display images
+          const outputEl = document.getElementById("output");
+          outputEl.innerHTML = posts
+            .map((p) => {
+              const imageHtml = p.imageUrl 
+                ? createImageWithFallback(p.imageUrl, p.title, "max-width: 100%; height: auto; border-radius: 0; margin: 20px 0; border: 1px solid #000000;")
+                : "";
+              
+              // Embedded YouTube video
+              let youtubeHtml = "";
+              if (p.youtubeUrl) {
+                console.log("[YouTube Debug] Processing post:", { postId: p.id, title: p.title, youtubeUrl: p.youtubeUrl });
+                const videoId = extractYouTubeId(p.youtubeUrl);
+                if (videoId) {
+                  youtubeHtml = createYouTubeEmbed(videoId, p.youtubeUrl);
+                } else {
+                  console.warn("[YouTube Debug] Could not extract videoId from:", p.youtubeUrl);
+                }
+              }
+              
+              // Embedded Vimeo video
+              let vimeoHtml = "";
+              if (p.vimeoUrl) {
+                const videoId = extractVimeoId(p.vimeoUrl);
+                if (videoId) {
+                  vimeoHtml = createVimeoEmbed(videoId, p.vimeoUrl);
+                }
+              }
+              
+              // Renderizar según el tipo de post
+              let contentHtml = '';
+              console.log('[Post Render] Post ID:', p.id, 'Title:', p.title, 'Type:', p.type);
+              
+              // Preferir siempre bloques (incluyendo slideshow como bloque).
+              // Mantener fallback legacy para posts antiguos type=slideshow sin bloques.
+              if (p.blocks && p.blocks.length > 0) {
+                // Si tiene bloques, renderizar bloques
+                console.log('[Post Render] Blocks data:', JSON.stringify(p.blocks, null, 2));
+                // Log detallado de cada bloque y su metadata
+                p.blocks.forEach((b, idx) => {
+                  console.log(`[Post Render] Block ${idx}:`, {
+                    type: b.type,
+                    metadata: b.metadata,
+                    metadataType: typeof b.metadata,
+                    hasWidth: b.metadata && (b.metadata.width || (typeof b.metadata === 'object' && b.metadata.width))
+                  });
+                });
+                contentHtml = renderBlocks(p.blocks);
+              } else if (p.type === 'slideshow' && p.metadata) {
+                // Fallback legacy
+                contentHtml = renderSlideshowFromMetadata(p.metadata);
+              } else {
+                // Contenido legacy
+                contentHtml = `<div class="post-content">${p.content || ''}</div>`;
+              }
+              
+              return `<div class="post-card">
+                ${imageHtml}
+                ${youtubeHtml}
+                ${vimeoHtml}
+                <div class="post-title">${p.title}</div>
+                ${contentHtml}
+              </div>`;
+            })
+            .join("");
+          
+          // Inicializar slideshows después de insertar HTML
+          setTimeout(function() {
+            initSlideshows();
+          }, 100);
+
+          // Add event listeners to all YouTube iframes after inserting HTML
+          setTimeout(function() {
+            const youtubeIframes = document.querySelectorAll('iframe[data-video-id]');
+            console.log("[YouTube Debug] Found", youtubeIframes.length, "YouTube iframes");
+            youtubeIframes.forEach(function(iframe) {
+              const videoId = iframe.getAttribute('data-video-id');
+              const originalUrl = iframe.getAttribute('data-original-url');
+              const iframeId = iframe.id;
+              
+              // Ensure referrerPolicy is set
+              iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+              
+              // Check if using file:// protocol (not recommended)
+              if (window.location.protocol === 'file:') {
+                console.warn('[YouTube Debug] ⚠️ WARNING: You are using file:// protocol. YouTube may not work correctly.');
+                console.warn('[YouTube Debug] Please use the HTTP server: http://localhost:8001/index.html');
+              }
+              
+              console.log('[YouTube Debug] Setting up listeners for iframe:', {
+                id: iframeId,
+                videoId: videoId,
+                src: iframe.src,
+                origin: window.location.origin,
+                href: window.location.href,
+                protocol: window.location.protocol,
+                referrerPolicy: iframe.referrerPolicy || iframe.getAttribute('referrerpolicy')
+              });
+              
+              iframe.addEventListener('load', function() {
+                console.log('[YouTube Debug] Iframe loaded successfully:', iframeId);
+                try {
+                  // Check referrerPolicy again after loading
+                  const referrerPolicyAttr = iframe.getAttribute('referrerpolicy');
+                  const referrerPolicyProp = iframe.referrerPolicy;
+                  
+                  console.log('[YouTube Debug] Iframe contentWindow:', iframe.contentWindow ? 'available' : 'not available');
+                  console.log('[YouTube Debug] Iframe current src:', iframe.src);
+                  console.log('[YouTube Debug] Iframe referrerPolicy (attribute):', referrerPolicyAttr);
+                  console.log('[YouTube Debug] Iframe referrerPolicy (property):', referrerPolicyProp);
+                  
+                  // If still not set, try to set it again
+                  if (!referrerPolicyAttr && !referrerPolicyProp) {
+                    iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+                    console.log('[YouTube Debug] referrerPolicy set again after load');
+                  }
+                } catch(e) {
+                  console.log('[YouTube Debug] Error accessing contentWindow (normal for cross-origin):', e.message);
+                }
+                
+                // Try to detect if there's an error 153 inside the iframe
+                // This is difficult because we can't access cross-origin content
+                // But we can check if the iframe has valid dimensions
+                setTimeout(function() {
+                  const rect = iframe.getBoundingClientRect();
+                  console.log('[YouTube Debug] Iframe dimensions:', {
+                    width: rect.width,
+                    height: rect.height,
+                    visible: rect.width > 0 && rect.height > 0
+                  });
+                  
+                  // If the iframe is very small or invisible, there may be an error
+                  if (rect.width < 100 || rect.height < 100) {
+                    console.warn('[YouTube Debug] Iframe appears to have anomalous dimensions - possible error 153');
+                  }
+                }, 2000);
+              });
+              
+              iframe.addEventListener('error', function(e) {
+                console.error('[YouTube Debug] Error in iframe:', iframeId, e);
+              });
+              
+              // Check after 3 seconds if there's any problem
+              setTimeout(function() {
+                try {
+                  if (iframe.contentWindow) {
+                    console.log('[YouTube Debug] Iframe verified after 3s: OK', iframeId);
+                    // Check final dimensions
+                    const rect = iframe.getBoundingClientRect();
+                    console.log('[YouTube Debug] Final iframe dimensions:', {
+                      width: rect.width,
+                      height: rect.height
+                    });
+                  }
+                } catch(e) {
+                    console.warn('[YouTube Debug] Iframe verified after 3s: Cross-origin error (normal)', iframeId);
+                }
+              }, 3000);
+            });
+          }, 100);
+          })
+          .catch((err) => {
+            document.getElementById("output").innerHTML = `<p style="color: #000000; border: 1px solid #000000; padding: 15px;">Error: ${err.message}</p>`;
+          });
+      }
+
+      // Initialize: load sections and posts
+      (async () => {
+        await loadSections();
+        // Manejar navegación (hash o sección por defecto)
+        const hash = window.location.hash;
+        if (hash && hash.startsWith('#post/')) {
+          // Ya se maneja en handleHashNavigation dentro de loadSections
+        } else if (sections.length > 0) {
+          const topLevelSections = sections.filter(s => !s.parentId).sort((a, b) => a.order - b.order);
+          if (topLevelSections.length > 0) {
+            selectSection(topLevelSections[0].id);
+          } else {
+            handleHashNavigation();
+          }
+        } else {
+          handleHashNavigation();
+        }
+      })();
+    </script>
+  </body>
+</html>

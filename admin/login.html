@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - CMS Admin</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: #ffffff;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .login-container {
+        background: #ffffff;
+        border-radius: 0;
+        border: 1px solid #000000;
+        box-shadow: none;
+        padding: 60px 40px;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      h1 {
+        text-align: center;
+        margin-bottom: 15px;
+        color: #000000;
+        font-weight: 300;
+        font-size: 28px;
+        letter-spacing: -0.5px;
+        border-bottom: 1px solid #000000;
+        padding-bottom: 15px;
+      }
+
+      .subtitle {
+        text-align: center;
+        color: #666666;
+        margin-bottom: 40px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .form-group {
+        margin-bottom: 25px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: 400;
+        color: #000000;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      input[type="email"],
+      input[type="password"] {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #000000;
+        border-radius: 0;
+        font-size: 14px;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: #ffffff;
+        color: #000000;
+        transition: border-color 0.2s ease;
+      }
+
+      input[type="email"]:focus,
+      input[type="password"]:focus {
+        outline: none;
+        border-color: #000000;
+      }
+
+      input[type="email"]:hover,
+      input[type="password"]:hover {
+        border-color: #333333;
+      }
+
+      button {
+        width: 100%;
+        background: #000000;
+        color: #ffffff;
+        border: 1px solid #000000;
+        padding: 14px;
+        border-radius: 0;
+        font-size: 13px;
+        font-weight: 400;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      button:hover {
+        background: #ffffff;
+        color: #000000;
+      }
+
+      button:active {
+        transform: none;
+      }
+
+      .message {
+        padding: 15px;
+        border-radius: 0;
+        margin-bottom: 25px;
+        display: none;
+        text-align: center;
+        border: 1px solid #000000;
+        background: #ffffff;
+        color: #000000;
+        font-size: 13px;
+      }
+
+      .message.success {
+        background: #ffffff;
+        color: #000000;
+        border-color: #000000;
+      }
+
+      .message.error {
+        background: #ffffff;
+        color: #000000;
+        border-color: #000000;
+      }
+
+      .message.show {
+        display: block;
+      }
+
+      .toggle-form {
+        text-align: center;
+        margin-top: 30px;
+        padding-top: 30px;
+        border-top: 1px solid #000000;
+      }
+
+      .toggle-form a {
+        color: #000000;
+        text-decoration: none;
+        font-weight: 400;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        transition: color 0.2s ease;
+      }
+
+      .toggle-form a:hover {
+        color: #666666;
+        text-decoration: none;
+      }
+
+      .loading {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-container">
+      <h1>CMS Admin</h1>
+      <p class="subtitle">Sign in or register</p>
+
+      <div id="message" class="message"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="email" />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" required autocomplete="current-password" minlength="6" />
+        </div>
+
+        <button type="submit" id="login-btn">Sign In</button>
+      </form>
+
+      <form id="register-form" style="display: none;">
+        <div class="form-group">
+          <label for="reg-email">Email</label>
+          <input type="email" id="reg-email" required autocomplete="email" />
+        </div>
+
+        <div class="form-group">
+          <label for="reg-password">Password (minimum 6 characters)</label>
+          <input type="password" id="reg-password" required autocomplete="new-password" minlength="6" />
+        </div>
+
+        <button type="submit" id="register-btn">Register</button>
+      </form>
+
+      <div class="toggle-form">
+        <a href="#" id="toggle-link">Don't have an account? Register</a>
+        <br><br>
+        <a href="#" id="forgot-password-link" style="font-size: 11px;">Forgot password?</a>
+      </div>
+
+      <!-- Google OAuth Button (only shown if configured) -->
+      <div id="google-auth-container" style="margin-top: 20px; text-align: center; display: block;">
+        <div style="margin: 20px 0; position: relative;">
+          <div style="position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid #000000;"></div>
+          <span style="background: #ffffff; padding: 0 15px; position: relative; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">OR</span>
+        </div>
+        <a href="http://localhost:3000/auth/google" id="google-login-btn" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #000000; border: 1px solid #000000; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; transition: all 0.2s ease;">
+          Sign in with Google
+        </a>
+        <p id="google-oauth-status" style="margin-top: 10px; font-size: 10px; color: #666666; display: none;"></p>
+      </div>
+
+      <!-- Forgot Password Form -->
+      <form id="forgot-password-form" style="display: none;">
+        <div class="form-group">
+          <label for="forgot-email">Email</label>
+          <input type="email" id="forgot-email" required autocomplete="email" />
+        </div>
+        <button type="submit" id="forgot-btn">Send Reset Link</button>
+        <div class="toggle-form" style="margin-top: 20px;">
+          <a href="#" id="back-to-login-link">Back to login</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      const API_URL = "http://localhost:3000";
+      let isRegisterMode = false;
+      let isForgotPasswordMode = false;
+
+      // Check if Google OAuth is available
+      async function checkGoogleAuth() {
+        try {
+          // Try to access Google OAuth endpoint (will redirect if available)
+          const res = await fetch(`${API_URL}/auth/google`, { 
+            method: 'GET', 
+            redirect: 'manual',
+            credentials: 'include'
+          });
+          // If we get a redirect (302, 301, 307, 308) or the endpoint exists, show the button
+          if (res.status === 302 || res.status === 301 || res.status === 307 || res.status === 308 || res.status === 200) {
+            document.getElementById('google-auth-container').style.display = 'block';
+            document.getElementById('google-oauth-status').style.display = 'none';
+            console.log('Google OAuth is configured');
+          } else {
+            // Google OAuth not configured - hide button or show message
+            document.getElementById('google-auth-container').style.display = 'none';
+            console.log('Google OAuth not configured (status:', res.status, ')');
+          }
+        } catch (err) {
+          // Google OAuth not configured or error - hide button
+          document.getElementById('google-auth-container').style.display = 'none';
+          console.log('Google OAuth not configured:', err.message);
+        }
+      }
+      
+      // Check on page load
+      checkGoogleAuth();
+
+      // Show message
+      function showMessage(text, type = "success") {
+        const msgEl = document.getElementById("message");
+        msgEl.textContent = text;
+        msgEl.className = `message ${type} show`;
+        setTimeout(() => {
+          msgEl.classList.remove("show");
+        }, 5000);
+      }
+
+      // Toggle between login and register
+      document.getElementById("toggle-link").addEventListener("click", (e) => {
+        e.preventDefault();
+        isRegisterMode = !isRegisterMode;
+        isForgotPasswordMode = false;
+
+        const loginForm = document.getElementById("login-form");
+        const registerForm = document.getElementById("register-form");
+        const forgotForm = document.getElementById("forgot-password-form");
+        const toggleLink = document.getElementById("toggle-link");
+        const forgotLink = document.getElementById("forgot-password-link");
+
+        if (isRegisterMode) {
+          loginForm.style.display = "none";
+          registerForm.style.display = "block";
+          forgotForm.style.display = "none";
+          toggleLink.textContent = "Already have an account? Sign in";
+          forgotLink.style.display = "none";
+        } else {
+          loginForm.style.display = "block";
+          registerForm.style.display = "none";
+          forgotForm.style.display = "none";
+          toggleLink.textContent = "Don't have an account? Register";
+          forgotLink.style.display = "inline";
+        }
+      });
+
+      // Toggle to forgot password
+      document.getElementById("forgot-password-link").addEventListener("click", (e) => {
+        e.preventDefault();
+        isForgotPasswordMode = true;
+        isRegisterMode = false;
+
+        document.getElementById("login-form").style.display = "none";
+        document.getElementById("register-form").style.display = "none";
+        document.getElementById("forgot-password-form").style.display = "block";
+        document.getElementById("toggle-link").style.display = "none";
+        document.getElementById("forgot-password-link").style.display = "none";
+      });
+
+      // Back to login from forgot password
+      document.getElementById("back-to-login-link").addEventListener("click", (e) => {
+        e.preventDefault();
+        isForgotPasswordMode = false;
+
+        document.getElementById("login-form").style.display = "block";
+        document.getElementById("register-form").style.display = "none";
+        document.getElementById("forgot-password-form").style.display = "none";
+        document.getElementById("toggle-link").style.display = "inline";
+        document.getElementById("forgot-password-link").style.display = "inline";
+      });
+
+      // Forgot password form
+      document.getElementById("forgot-password-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        form.classList.add("loading");
+
+        const email = document.getElementById("forgot-email").value;
+
+        try {
+          const res = await fetch(`${API_URL}/auth/forgot-password`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ email }),
+          });
+
+          const data = await res.json();
+          
+          if (res.ok) {
+            showMessage(data.message || "If an account with that email exists, a password reset link has been sent.", "success");
+            form.classList.remove("loading");
+            // Clear form
+            document.getElementById("forgot-email").value = "";
+          } else {
+            throw new Error(data.error || "Failed to send reset email");
+          }
+        } catch (err) {
+          console.error("Forgot password error:", err);
+          showMessage(`Error: ${err.message}`, "error");
+          form.classList.remove("loading");
+        }
+      });
+
+      // Login
+      document.getElementById("login-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        form.classList.add("loading");
+
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+
+        try {
+          const res = await fetch(`${API_URL}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include", // Important for session cookies
+            body: JSON.stringify({ email, password }),
+          });
+
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Login failed");
+          }
+
+          const data = await res.json();
+          
+          // Check if email verification is required
+          if (data.requiresVerification) {
+            const email = document.getElementById("email").value;
+            showMessage(
+              `Email not verified. Please check your email and verify your account. <a href="#" id="resend-verification-link" style="color: #000000; text-decoration: underline;">Resend verification email</a>`,
+              "error"
+            );
+            form.classList.remove("loading");
+            
+            // Add resend verification handler
+            setTimeout(() => {
+              const link = document.getElementById('resend-verification-link');
+              if (link) {
+                link.addEventListener('click', async (e) => {
+                  e.preventDefault();
+                  try {
+                    const resendRes = await fetch(`${API_URL}/auth/resend-verification`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ email: email }),
+                    });
+                    const resendData = await resendRes.json();
+                    if (resendRes.ok) {
+                      showMessage(resendData.message || 'Verification email sent. Please check your inbox.', 'success');
+                    } else {
+                      showMessage(resendData.error || 'Failed to resend verification email', 'error');
+                    }
+                  } catch (err) {
+                    showMessage('Failed to resend verification email', 'error');
+                  }
+                });
+              }
+            }, 100);
+            return;
+          }
+          
+          // Verify session immediately before redirecting
+          try {
+            const meRes = await fetch(`${API_URL}/auth/me`, {
+              credentials: "include",
+            });
+            
+            if (!meRes.ok) {
+              throw new Error("Error verifying session");
+            }
+            
+            const meData = await meRes.json();
+            
+            if (meData.authenticated) {
+              showMessage(`Login successful! Welcome ${data.user.email}. Redirecting...`, "success");
+              setTimeout(() => {
+                window.location.href = "admin.html";
+              }, 1500);
+            } else {
+              showMessage("Login successful but session not active. Please try again.", "error");
+              form.classList.remove("loading");
+            }
+          } catch (verifyErr) {
+            console.error("Error verifying session:", verifyErr);
+            showMessage("Login successful but error verifying session. Try accessing the panel manually.", "error");
+            form.classList.remove("loading");
+          }
+        } catch (err) {
+          console.error("Login error:", err);
+          showMessage(`Error: ${err.message}`, "error");
+          form.classList.remove("loading");
+        }
+      });
+
+      // Register
+      document.getElementById("register-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        form.classList.add("loading");
+
+        const email = document.getElementById("reg-email").value;
+        const password = document.getElementById("reg-password").value;
+
+        try {
+          const res = await fetch(`${API_URL}/auth/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include", // Important for session cookies
+            body: JSON.stringify({ email, password }),
+          });
+
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Registration failed");
+          }
+
+          const data = await res.json();
+          
+          // Check if email verification is required
+          if (data.requiresVerification) {
+            showMessage(
+              `Registration successful! Please check your email (${data.user.email}) to verify your account before logging in. <a href="#" id="resend-verification-link-reg" style="color: #000000; text-decoration: underline;">Resend verification email</a>`,
+              "success"
+            );
+            form.classList.remove("loading");
+            
+            // Switch back to login form
+            isRegisterMode = false;
+            document.getElementById("login-form").style.display = "block";
+            document.getElementById("register-form").style.display = "none";
+            document.getElementById("toggle-link").textContent = "Don't have an account? Register";
+            
+            // Add resend verification handler
+            document.getElementById('resend-verification-link-reg')?.addEventListener('click', async (e) => {
+              e.preventDefault();
+              try {
+                const resendRes = await fetch(`${API_URL}/auth/resend-verification`, {
+                  method: 'POST',
+                  credentials: 'include',
+                });
+                const resendData = await resendRes.json();
+                if (resendRes.ok) {
+                  showMessage('Verification email sent. Please check your inbox.', 'success');
+                } else {
+                  showMessage(resendData.error || 'Failed to resend verification email', 'error');
+                }
+              } catch (err) {
+                showMessage('Failed to resend verification email', 'error');
+              }
+            });
+            return;
+          }
+          
+          // Verify session immediately
+          try {
+            const meRes = await fetch(`${API_URL}/auth/me`, {
+              credentials: "include",
+            });
+            const meData = await meRes.json();
+            
+            if (meData.authenticated) {
+              showMessage(
+                `Registration successful! User: ${data.user.email} (ID: ${data.user.id}). Session active. Redirecting...`,
+                "success"
+              );
+              setTimeout(() => {
+                window.location.href = "admin.html";
+              }, 1500);
+            } else {
+              showMessage("User created but session not active. Please sign in.", "error");
+              form.classList.remove("loading");
+            }
+          } catch (err) {
+            showMessage(`User created (${data.user.email}) but error verifying session. Please sign in.`, "error");
+            form.classList.remove("loading");
+          }
+        } catch (err) {
+          showMessage(`Error: ${err.message}`, "error");
+          form.classList.remove("loading");
+        }
+      });
+
+      // Check if already authenticated
+      let isRedirectingToAdmin = false;
+      async function checkAuth() {
+        // Evitar múltiples redirecciones
+        if (isRedirectingToAdmin) {
+          return;
+        }
+        
+        try {
+          const res = await fetch(`${API_URL}/auth/me`, {
+            credentials: "include",
+          });
+          
+          if (!res.ok) {
+            // No está autenticado, mostrar login
+            return;
+          }
+          
+          const data = await res.json();
+          if (data.authenticated) {
+            if (!isRedirectingToAdmin) {
+              isRedirectingToAdmin = true;
+              console.log("[Login checkAuth] Already authenticated, redirecting to admin...");
+              // Usar replace en vez de href para evitar que se pueda volver atrás
+              window.location.replace("admin.html");
+            }
+          }
+        } catch (err) {
+          // Ignore errors, just show login
+          console.error("[Login checkAuth] Error:", err);
+        }
+      }
+
+      // Check if using file:// and show warning
+      if (window.location.protocol === "file:") {
+        showMessage(
+          "⚠️ WARNING: You are using file://. Cookies will not work. Use a local HTTP server (see README.md).",
+          "error"
+        );
+      }
+
+      checkAuth();
+    </script>
+  </body>
+</html>

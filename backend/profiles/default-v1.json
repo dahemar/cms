@@ -1,0 +1,23 @@
+{
+  "name": "default-v1",
+  "description": "Default template with flexible content blocks",
+  "version": "1.0.0",
+  "sectionSchemas": {
+    "flexible_content": {
+      "label": "Flexible Content",
+      "postType": "blog",
+      "defaultTemplate": {
+        "blocks": [
+          {
+            "type": "text",
+            "required": true,
+            "width": "full"
+          }
+        ]
+      },
+      "allowedBlocks": ["text", "image", "video", "slideshow", "embed_instagram", "embed_soundcloud"],
+      "allowReorder": true
+    }
+  }
+}
+

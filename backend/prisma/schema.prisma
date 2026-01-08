@@ -1,0 +1,252 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
+  password     String?   // Hasheado con bcrypt (opcional para usuarios OAuth)
+  emailVerified Boolean  @default(false) // Si el email ha sido verificado
+  googleId     String?   @unique // ID de Google OAuth (opcional)
+  isAdmin      Boolean   @default(false) // Si es true, puede acceder a todos los sitios
+  sites        UserSite[] // Relación con sitios (permisos)
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  auditLogs    AuditLog[] // Logs de auditoría
+  createdAt    DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Site {
+  id                Int              @id @default(autoincrement())
+  name              String
+  slug              String           @unique
+  domain            String?          // Dominio del frontend (opcional)
+  description       String?
+  frontendProfileId Int?             // Perfil de frontend asociado (nullable para compatibilidad)
+  frontendProfile   FrontendProfile? @relation(fields: [frontendProfileId], references: [id], onDelete: SetNull)
+  config            SiteConfig?      // Configuración del sitio
+  users             UserSite[]       // Usuarios con acceso
+  posts             Post[]
+  sections          Section[]
+  tags              Tag[]
+  thumbnails        Thumbnail[]      // Miniaturas del sitio
+  auditLogs         AuditLog[]       // Logs de auditoría
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model SiteConfig {
+  id          Int      @id @default(autoincrement())
+  siteId      Int      @unique
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  themeColor  String?  // Color principal del tema
+  logoUrl     String?  // URL del logo
+  font        String?  // Fuente personalizada
+  customCSS   String?  // CSS personalizado
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Perfil de frontend que define qué secciones y bloques admite un frontend
+model FrontendProfile {
+  id            Int      @id @default(autoincrement())
+  name          String   @unique // Ej: "portfolio-v1", "magazine-v2"
+  description   String?  // Descripción del perfil
+  version       String   @default("1.0.0") // Versión del perfil para evolución
+  sectionSchemas Json     // JSON con los schemas de secciones: { "project_detail": {...}, "project_index": {...} }
+  deprecated    Boolean  @default(false) // Si es true, no se puede asignar a nuevos sitios
+  sites         Site[]   // Sitios que usan este perfil
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([name, version])
+  @@index([deprecated])
+}
+
+model UserSite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  siteId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, siteId])
+  @@index([userId])
+  @@index([siteId])
+}
+
+model Tag {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String
+  siteId    Int?
+  site      Site?    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  posts     Post[]
+  createdAt DateTime @default(now())
+
+  @@unique([siteId, slug])
+  @@index([siteId])
+}
+
+model Section {
+  id           Int       @id @default(autoincrement())
+  name         String
+  slug         String
+  description  String?
+  postType     String    @default("blog") // Tipo de post único para esta sección
+  schemaKey    String?   // Clave del schema en FrontendProfile (nullable, referencia al origen)
+  blockTemplate Json?    // Template de bloques materializado y editable (null = libertad total)
+  siteId       Int?
+  site         Site?     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  parentId     Int?
+  parent       Section?  @relation("SectionHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Section[] @relation("SectionHierarchy")
+  order        Int       @default(0)
+  posts        Post[]
+  thumbnails   Thumbnail[] // Miniaturas de esta sección
+  detailSectionId Int?   // Si esta sección es de miniaturas, apunta a la sección de detalles
+  detailSection Section? @relation("ThumbnailDetailSection", fields: [detailSectionId], references: [id], onDelete: SetNull)
+  thumbnailSections Section[] @relation("ThumbnailDetailSection") // Secciones que usan esta como sección de detalles
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([siteId, slug])
+  @@index([parentId])
+  @@index([siteId])
+  @@index([schemaKey])
+}
+
+model Post {
+  id         Int      @id @default(autoincrement())
+  title      String
+  slug       String
+  type       String   @default("blog") // blog, noticia, producto, landing, slideshow, etc.
+  content    String   // Contenido HTML legacy (para compatibilidad hacia atrás)
+  published  Boolean  @default(false)
+  order      Int      @default(0) // Orden del post dentro de su sección (para grids/listas)
+  imageUrl   String?  // URL de imagen externa (Imgur, etc.) - legacy
+  youtubeUrl String?  // URL de video de YouTube - legacy
+  vimeoUrl   String?  // URL de video de Vimeo - legacy
+  
+  // Campos predefinidos (estructura base del post)
+  subtitle   String?  // Subtítulo del post
+  summary    String?  // Resumen/descripción corta
+  author     String?  // Autor del post
+  featuredImageUrl String? // Imagen destacada (para tipos que la requieran)
+  
+  siteId     Int?
+  site       Site?    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  sectionId  Int?
+  section    Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  tags       Tag[]
+  blocks     PostBlock[] // Bloques flexibles de contenido
+  metadata   Json?    // Campos dinámicos adicionales según tipo (precio, fecha, etc.)
+  thumbnail  Thumbnail? // Relación inversa: post puede ser página de detalle de una miniatura
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([siteId, slug])
+  @@index([type])
+  @@index([sectionId, order])
+  @@index([sectionId])
+  @@index([siteId])
+}
+
+// Bloques flexibles de contenido para posts
+model PostBlock {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  type      String   // "text", "image", "video" (auto-detects YouTube/Vimeo), "embed_instagram", "embed_soundcloud", "slideshow"
+  content   String?  // Contenido del bloque (texto HTML, URL de imagen/video, embed code, etc.)
+  order     Int      @default(0) // Orden de visualización
+  metadata  Json?    // Metadatos adicionales: alineación, caption, tamaño, crop data, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+  @@index([postId, order])
+}
+
+// Token para verificación de email
+model EmailVerificationToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+// Token para reset de contraseña
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+// Miniaturas para secciones de tipo "thumbnails"
+model Thumbnail {
+  id           Int      @id @default(autoincrement())
+  title        String
+  imageUrl     String   // URL de la imagen de la miniatura
+  description  String?  // Descripción opcional
+  sectionId    Int      // Sección de miniaturas a la que pertenece
+  section      Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  detailPostId Int?     @unique // Post de detalle generado automáticamente
+  detailPost   Post?    @relation(fields: [detailPostId], references: [id], onDelete: SetNull)
+  order        Int      @default(0) // Orden de visualización
+  siteId       Int?     // Para filtrado por sitio
+  site         Site?    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([sectionId])
+  @@index([siteId])
+  @@index([order])
+}
+
+// Logs de auditoría
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   // "login", "post_created", "post_updated", "post_deleted", "user_created", etc.
+  resource  String?  // Tipo de recurso afectado: "post", "user", "site", etc.
+  resourceId Int?    // ID del recurso afectado
+  siteId    Int?     // ID del sitio relacionado (si aplica)
+  site      Site?    @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  details   Json?    // Detalles adicionales en formato JSON
+  ipAddress String?  // IP del usuario
+  userAgent String?  // User agent del navegador
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([siteId])
+  @@index([createdAt])
+}
