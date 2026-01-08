@@ -969,11 +969,19 @@ app.get("/auth/me", async (req, res) => {
   // Verificar si la tabla Session existe en la base de datos
   if (sessionStore && prisma) {
     try {
-      const sessionCount = await prisma.session.count();
-      console.log("[GET /auth/me] Session table exists, count:", sessionCount);
+      // Intentar hacer una query simple para verificar que la tabla existe
+      await prisma.$queryRaw`SELECT 1 FROM "Session" LIMIT 1`;
+      const sessionCount = await prisma.$queryRaw`SELECT COUNT(*) as count FROM "Session"`;
+      console.log("[GET /auth/me] ✅ Session table exists, count:", sessionCount[0]?.count || 0);
     } catch (err) {
-      console.error("[GET /auth/me] ❌ CRITICAL: Session table does not exist!", err.message);
-      console.error("[GET /auth/me] This is why sessions are not working!");
+      if (err.code === 'P2021' || err.message?.includes('does not exist') || err.message?.includes('relation') && err.message?.includes('does not exist')) {
+        console.error("[GET /auth/me] ❌ CRITICAL: Session table does NOT exist!");
+        console.error("[GET /auth/me] Error:", err.message);
+        console.error("[GET /auth/me] This is why sessions are not working!");
+        console.error("[GET /auth/me] Solution: Execute the SQL in backend/SESSION_TABLE_MIGRATION.sql in Supabase");
+      } else {
+        console.error("[GET /auth/me] Error checking Session table:", err.message);
+      }
     }
   }
   
