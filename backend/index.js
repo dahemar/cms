@@ -110,7 +110,9 @@ app.use(
           console.error(
             "ERROR: SESSION_SECRET must be set in production. Add it to your .env file."
           );
-          process.exit(1);
+          console.error("WARNING: Using a default secret (NOT SECURE). Sessions may not work correctly.");
+          // NO hacer process.exit(1) en Vercel, usar un valor por defecto
+          return "default-production-secret-CHANGE-THIS";
         }
         // Solo en desarrollo, usar un valor por defecto (NO SEGURO)
         console.warn(
