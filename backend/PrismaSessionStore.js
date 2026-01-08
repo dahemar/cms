@@ -1,10 +1,11 @@
 // Prisma-based session store for express-session
 // Compatible with Vercel serverless functions
 
-const { PrismaClient } = require("@prisma/client");
-
 class PrismaSessionStore {
   constructor(prisma) {
+    if (!prisma) {
+      throw new Error("PrismaClient instance is required");
+    }
     this.prisma = prisma;
   }
 

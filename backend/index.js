@@ -15,7 +15,16 @@ const PrismaSessionStore = require("./PrismaSessionStore");
 
 const app = express();
 const prisma = new PrismaClient();
-const sessionStore = new PrismaSessionStore(prisma);
+
+// Inicializar session store con manejo de errores
+let sessionStore;
+try {
+  sessionStore = new PrismaSessionStore(prisma);
+} catch (error) {
+  console.error("[Session Store] Error initializing PrismaSessionStore:", error);
+  // Continuar sin store (usará memoria por defecto si falla)
+  sessionStore = undefined;
+}
 
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
 // We keep a DB mirror so sites can reference a profile via FK, but disk remains the source of truth.
