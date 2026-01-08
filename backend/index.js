@@ -331,9 +331,23 @@ const adminRateLimiter = rateLimit({
 
 const path = require("path");
 
+// Health check endpoint (sin dependencias de Prisma)
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    prisma: prisma ? "initialized" : "not initialized"
+  });
+});
+
 // Serve admin HTML files
 app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "../admin/admin.html"));
+  try {
+    res.sendFile(path.join(__dirname, "../admin/admin.html"));
+  } catch (error) {
+    console.error("[Admin] Error serving admin.html:", error);
+    res.status(500).send("Error loading admin panel");
+  }
 });
 
 app.get("/admin.html", (req, res) => {
