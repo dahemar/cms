@@ -7,8 +7,8 @@
     "seed": "node seed.js",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:generate": "prisma generate",
-    "build": "prisma generate",
-    "vercel-build": "prisma generate"
+    "build": "prisma generate && prisma migrate deploy",
+    "vercel-build": "prisma generate && prisma migrate deploy"
   },
   "keywords": [],
   "author": "",
