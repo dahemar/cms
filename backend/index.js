@@ -150,26 +150,26 @@ try {
 // IMPORTANTE: express-session DEBE estar ANTES de Passport
 // Configurar sesiones
 console.log("[Init] Setting up session middleware...");
-try {
-  app.use(
-    session({
-    secret:
-      process.env.SESSION_SECRET ||
-      (() => {
-        if (isProduction) {
-          console.error(
-            "ERROR: SESSION_SECRET must be set in production. Add it to your .env file."
-          );
-          console.error("WARNING: Using a default secret (NOT SECURE). Sessions may not work correctly.");
-          // NO hacer process.exit(1) en Vercel, usar un valor por defecto
-          return "default-production-secret-CHANGE-THIS";
-        }
-        // Solo en desarrollo, usar un valor por defecto (NO SEGURO)
-        console.warn(
-          "⚠️  WARNING: Using default SESSION_SECRET. Set SESSION_SECRET in .env for production!"
-        );
-        return "default-dev-secret-change-in-production";
-      })(),
+const sessionSecret = process.env.SESSION_SECRET || (() => {
+  if (isProduction) {
+    console.error(
+      "ERROR: SESSION_SECRET must be set in production. Add it to your .env file."
+    );
+    console.error("WARNING: Using a default secret (NOT SECURE). Sessions may not work correctly.");
+    // NO hacer process.exit(1) en Vercel, usar un valor por defecto
+    return "default-production-secret-CHANGE-THIS";
+  }
+  // Solo en desarrollo, usar un valor por defecto (NO SEGURO)
+  console.warn(
+    "⚠️  WARNING: Using default SESSION_SECRET. Set SESSION_SECRET in .env for production!"
+  );
+  return "default-dev-secret-change-in-production";
+})();
+
+// Aplicar middleware de sesión SIEMPRE (no dentro de try-catch para asegurar que se aplique)
+app.use(
+  session({
+    secret: sessionSecret,
     store: sessionStore || undefined, // Usar Prisma para almacenamiento persistente (fallback a memoria si falla)
     resave: false,
     saveUninitialized: false,
@@ -180,13 +180,9 @@ try {
       sameSite: isProduction ? "none" : "lax", // "none" para Vercel (requiere secure: true)
       domain: process.env.COOKIE_DOMAIN || undefined, // Dejar undefined para que use el dominio actual
     },
-  }));
-  console.log("[Init] ✅ Session middleware configured");
-} catch (error) {
-  console.error("[Init] ❌ Error setting up session middleware:", error.message);
-  console.error("[Init] Error stack:", error.stack);
-  // Continuar sin sesiones si fallan
-}
+  })
+);
+console.log("[Init] ✅ Session middleware configured");
 
 // Inicializar Passport (DESPUÉS de express-session)
 console.log("[Init] Setting up Passport...");
