@@ -80,7 +80,8 @@ if (isProduction && !process.env.SESSION_SECRET) {
   console.error(
     "ERROR: SESSION_SECRET must be set in production. Add it to your .env file."
   );
-  process.exit(1);
+  console.error("WARNING: Server will continue but sessions may not work correctly.");
+  // NO hacer process.exit(1) en Vercel, solo loguear el error
 }
 
 // Configurar CORS con credenciales para sesiones
