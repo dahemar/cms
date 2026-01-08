@@ -814,6 +814,9 @@ app.post("/auth/register", authRateLimiter, async (req, res) => {
 
 // POST /auth/login - Iniciar sesión
 app.post("/auth/login", async (req, res) => {
+  // Asegurar que siempre devolvemos JSON
+  res.setHeader('Content-Type', 'application/json');
+  
   try {
     const { email, password } = req.body;
 
