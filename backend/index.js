@@ -112,9 +112,13 @@ process.nextTick(() => {
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
+// En producción, si ALLOWED_ORIGINS no está configurado, permitir cualquier origen
+// Esto es necesario porque Vercel usa múltiples dominios (*.vercel.app)
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-  : true; // En desarrollo, permitir cualquier origen
+  : (isProduction ? true : true); // Permitir cualquier origen si no está configurado (necesario para Vercel)
+  
+console.log("[Init] CORS allowed origins:", allowedOrigins === true ? "All origins (wildcard)" : allowedOrigins);
 
 // Validar que SESSION_SECRET esté configurado en producción
 if (isProduction && !process.env.SESSION_SECRET) {
