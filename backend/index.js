@@ -878,14 +878,15 @@ app.post("/auth/login", async (req, res) => {
       userId: user.id,
       userEmail: user.email,
       isAdmin: user.isAdmin,
-      sessionID: req.sessionID
+      sessionID: req.sessionID,
+      cookie: req.session.cookie
     });
     
     // Guardar sesión explícitamente antes de enviar respuesta (crítico en serverless)
     await new Promise((resolve, reject) => {
       req.session.save((err) => {
         if (err) {
-          console.error("[Login] Error saving session:", err);
+          console.error("[Login] ❌ Error saving session:", err);
           console.error("[Login] Session save error details:", {
             message: err.message,
             stack: err.stack,
@@ -893,10 +894,39 @@ app.post("/auth/login", async (req, res) => {
           });
           return reject(err);
         }
-        console.log("[Login] Session saved successfully, sessionID:", req.sessionID);
+        console.log("[Login] ✅ Session saved successfully");
+        console.log("[Login] Session ID:", req.sessionID);
+        console.log("[Login] Session cookie will be set:", {
+          secure: req.session.cookie.secure,
+          sameSite: req.session.cookie.sameSite,
+          httpOnly: req.session.cookie.httpOnly,
+          maxAge: req.session.cookie.maxAge
+        });
         resolve();
       });
     });
+    
+    // Verificar que la sesión se guardó correctamente
+    try {
+      if (sessionStore && typeof sessionStore.get === 'function') {
+        await new Promise((resolve, reject) => {
+          sessionStore.get(req.sessionID, (err, sessionData) => {
+            if (err) {
+              console.error("[Login] ❌ Error verifying session in store:", err);
+              return reject(err);
+            }
+            if (sessionData) {
+              console.log("[Login] ✅ Session verified in store, userId:", sessionData.userId);
+            } else {
+              console.warn("[Login] ⚠️ Session not found in store after save!");
+            }
+            resolve();
+          });
+        });
+      }
+    } catch (verifyErr) {
+      console.error("[Login] ⚠️ Error verifying session (non-critical):", verifyErr);
+    }
     
     res.json({
       message: "Login successful",
@@ -925,24 +955,45 @@ app.post("/auth/logout", async (req, res) => {
 
 // GET /auth/me - Obtener usuario actual
 app.get("/auth/me", async (req, res) => {
+  console.log("[GET /auth/me] ========== INICIO ==========");
+  console.log("[GET /auth/me] Session ID:", req.sessionID);
+  console.log("[GET /auth/me] Session exists:", !!req.session);
+  console.log("[GET /auth/me] Session data:", req.session ? {
+    userId: req.session.userId,
+    userEmail: req.session.userEmail,
+    isAdmin: req.session.isAdmin
+  } : "No session");
+  console.log("[GET /auth/me] Cookies:", req.headers.cookie);
+  
   if (req.session && req.session.userId) {
-    const user = await prisma.user.findUnique({
-      where: { id: req.session.userId },
-      select: { id: true, email: true, isAdmin: true, emailVerified: true },
-    });
-    
-    if (user) {
-      return res.json({
-        authenticated: true,
-        user: {
-          id: user.id,
-          email: user.email,
-          isAdmin: user.isAdmin,
-          emailVerified: user.emailVerified,
-        },
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: req.session.userId },
+        select: { id: true, email: true, isAdmin: true, emailVerified: true },
       });
+      
+      if (user) {
+        console.log("[GET /auth/me] ✅ User found:", user.email);
+        return res.json({
+          authenticated: true,
+          user: {
+            id: user.id,
+            email: user.email,
+            isAdmin: user.isAdmin,
+            emailVerified: user.emailVerified,
+          },
+        });
+      } else {
+        console.log("[GET /auth/me] ⚠️ User not found in database for userId:", req.session.userId);
+      }
+    } catch (err) {
+      console.error("[GET /auth/me] ❌ Error fetching user:", err);
     }
+  } else {
+    console.log("[GET /auth/me] ⚠️ No session or no userId in session");
   }
+  
+  console.log("[GET /auth/me] Returning authenticated: false");
   res.json({ authenticated: false });
 });
 

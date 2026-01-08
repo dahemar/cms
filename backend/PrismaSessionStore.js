@@ -14,30 +14,35 @@ class PrismaSessionStore extends EventEmitter {
 
   async get(sessionId, callback) {
     try {
+      console.log('[PrismaSessionStore] Getting session:', sessionId);
       const session = await this.prisma.session.findUnique({
         where: { id: sessionId },
       });
 
       if (!session) {
+        console.log('[PrismaSessionStore] Session not found:', sessionId);
         return callback(null, null);
       }
 
       // Check if session has expired
       if (session.expiresAt < new Date()) {
+        console.log('[PrismaSessionStore] Session expired:', sessionId);
         await this.destroy(sessionId);
         return callback(null, null);
       }
 
       // Parse session data
       const data = JSON.parse(session.data);
+      console.log('[PrismaSessionStore] Session retrieved successfully, userId:', data.userId);
       callback(null, data);
     } catch (error) {
       // Si la tabla no existe aún, retornar null en lugar de crashear
       if (error.code === 'P2021' || error.message?.includes('does not exist')) {
-        console.warn('[PrismaSessionStore] Session table does not exist yet:', error.message);
+        console.warn('[PrismaSessionStore] ⚠️ Session table does not exist yet:', error.message);
+        console.warn('[PrismaSessionStore] Please run: npx prisma migrate deploy');
         return callback(null, null);
       }
-      console.error('[PrismaSessionStore] Error getting session:', error);
+      console.error('[PrismaSessionStore] ❌ Error getting session:', error);
       callback(error);
     }
   }
@@ -48,6 +53,8 @@ class PrismaSessionStore extends EventEmitter {
         ? new Date(sessionData.cookie.expires)
         : new Date(Date.now() + (sessionData.cookie?.maxAge || 24 * 60 * 60 * 1000));
 
+      console.log('[PrismaSessionStore] Saving session:', sessionId, 'userId:', sessionData.userId);
+      
       await this.prisma.session.upsert({
         where: { id: sessionId },
         create: {
@@ -61,15 +68,22 @@ class PrismaSessionStore extends EventEmitter {
         },
       });
 
+      console.log('[PrismaSessionStore] ✅ Session saved successfully:', sessionId);
       callback(null);
     } catch (error) {
       // Si la tabla no existe aún, loguear warning pero no crashear
       if (error.code === 'P2021' || error.message?.includes('does not exist')) {
-        console.warn('[PrismaSessionStore] Session table does not exist yet:', error.message);
-        console.warn('[PrismaSessionStore] Please run: npx prisma migrate deploy');
-        return callback(null); // Continuar sin guardar sesión
+        console.error('[PrismaSessionStore] ❌ Session table does not exist yet:', error.message);
+        console.error('[PrismaSessionStore] This is a CRITICAL error - sessions will not persist!');
+        console.error('[PrismaSessionStore] Please run: npx prisma migrate deploy');
+        return callback(null); // Continuar sin guardar sesión (pero esto causará problemas)
       }
-      console.error('[PrismaSessionStore] Error setting session:', error);
+      console.error('[PrismaSessionStore] ❌ Error setting session:', error);
+      console.error('[PrismaSessionStore] Error details:', {
+        code: error.code,
+        message: error.message,
+        meta: error.meta
+      });
       callback(error);
     }
   }
