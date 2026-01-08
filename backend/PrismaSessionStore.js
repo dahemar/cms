@@ -102,6 +102,9 @@ class PrismaSessionStore {
       }
       callback(null, result);
     } catch (error) {
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        return callback(null, {});
+      }
       callback(error);
     }
   }
@@ -117,6 +120,9 @@ class PrismaSessionStore {
       });
       callback(null, count);
     } catch (error) {
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        return callback(null, 0);
+      }
       callback(error);
     }
   }
@@ -126,6 +132,10 @@ class PrismaSessionStore {
       await this.prisma.session.deleteMany({});
       if (callback) callback(null);
     } catch (error) {
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        if (callback) callback(null);
+        return;
+      }
       if (callback) callback(error);
     }
   }
@@ -145,6 +155,9 @@ class PrismaSessionStore {
 
       callback(null);
     } catch (error) {
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        return callback(null);
+      }
       callback(error);
     }
   }
