@@ -818,6 +818,12 @@ app.post("/auth/login", async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   
   try {
+    // Verificar que Prisma esté inicializado
+    if (!prisma) {
+      console.error("[Login] Prisma not initialized");
+      return res.status(500).json({ error: "Database connection not available" });
+    }
+    
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -4048,10 +4054,15 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
 app.use((err, req, res, next) => {
   console.error("[Error Handler] Unhandled error:", err);
   console.error("[Error Handler] Stack:", err.stack);
-  res.status(500).json({ 
-    error: "Internal server error",
-    message: process.env.NODE_ENV === "production" ? "An error occurred" : err.message
-  });
+  
+  // Asegurar que siempre devolvemos JSON, no HTML
+  if (!res.headersSent) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ 
+      error: "Internal server error",
+      message: process.env.NODE_ENV === "production" ? "An error occurred" : err.message
+    });
+  }
 });
 
 // Export handler for Vercel serverless
