@@ -791,10 +791,18 @@ app.post("/auth/login", async (req, res) => {
     // Crear sesión
     req.session.userId = user.id;
     req.session.userEmail = user.email;
-
-    res.json({
-      message: "Login successful",
-      user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
+    
+    // Guardar sesión explícitamente antes de enviar respuesta
+    req.session.save((err) => {
+      if (err) {
+        console.error("[Login] Error saving session:", err);
+        return res.status(500).json({ error: "Failed to create session" });
+      }
+      
+      res.json({
+        message: "Login successful",
+        user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
+      });
     });
   } catch (err) {
     console.error(err);
