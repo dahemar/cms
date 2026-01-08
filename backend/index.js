@@ -3941,11 +3941,17 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Cache TTL: ${CACHE_TTL}ms (${CACHE_TTL / 1000}s)`);
-  console.log(`Rate limiting enabled for public, auth, and admin endpoints`);
-});
+// Export handler for Vercel serverless
+module.exports = app;
+
+// Only listen if running locally (not in Vercel)
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Cache TTL: ${CACHE_TTL}ms (${CACHE_TTL / 1000}s)`);
+    console.log(`Rate limiting enabled for public, auth, and admin endpoints`);
+  });
+}
 
 
