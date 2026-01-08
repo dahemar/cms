@@ -1,4 +1,10 @@
-require("dotenv").config();
+// Cargar dotenv solo si existe (opcional, Vercel ya tiene las variables de entorno)
+try {
+  require("dotenv").config();
+} catch (error) {
+  // dotenv no es crítico, continuar sin él
+  console.log("[Config] dotenv not available, using environment variables");
+}
 
 const express = require("express");
 const cors = require("cors");
