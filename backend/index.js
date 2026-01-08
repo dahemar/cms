@@ -921,18 +921,35 @@ app.post("/auth/login", async (req, res) => {
     // Crear sesión
     req.session.userId = user.id;
     req.session.userEmail = user.email;
+    req.session.isAdmin = user.isAdmin || false;
     
-    // Guardar sesión explícitamente antes de enviar respuesta
-    req.session.save((err) => {
-      if (err) {
-        console.error("[Login] Error saving session:", err);
-        return res.status(500).json({ error: "Failed to create session" });
-      }
-      
-      res.json({
-        message: "Login successful",
-        user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
+    console.log("[Login] Setting session data:", {
+      userId: user.id,
+      userEmail: user.email,
+      isAdmin: user.isAdmin,
+      sessionID: req.sessionID
+    });
+    
+    // Guardar sesión explícitamente antes de enviar respuesta (crítico en serverless)
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error("[Login] Error saving session:", err);
+          console.error("[Login] Session save error details:", {
+            message: err.message,
+            stack: err.stack,
+            code: err.code
+          });
+          return reject(err);
+        }
+        console.log("[Login] Session saved successfully, sessionID:", req.sessionID);
+        resolve();
       });
+    });
+    
+    res.json({
+      message: "Login successful",
+      user: { id: user.id, email: user.email, emailVerified: user.emailVerified, isAdmin: user.isAdmin || false },
     });
   } catch (err) {
     console.error(err);
