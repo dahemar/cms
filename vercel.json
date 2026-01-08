@@ -40,6 +40,13 @@
       }
     },
     {
+      "src": "/login.html",
+      "dest": "/admin/login.html",
+      "headers": {
+        "Cache-Control": "public, max-age=3600"
+      }
+    },
+    {
       "src": "/(.*)",
       "dest": "backend/index.js"
     }

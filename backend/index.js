@@ -286,7 +286,15 @@ app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "../admin/admin.html"));
 });
 
+app.get("/admin.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "../admin/admin.html"));
+});
+
 app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "../admin/login.html"));
+});
+
+app.get("/login.html", (req, res) => {
   res.sendFile(path.join(__dirname, "../admin/login.html"));
 });
 
