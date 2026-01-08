@@ -963,7 +963,19 @@ app.get("/auth/me", async (req, res) => {
     userEmail: req.session.userEmail,
     isAdmin: req.session.isAdmin
   } : "No session");
-  console.log("[GET /auth/me] Cookies:", req.headers.cookie);
+  console.log("[GET /auth/me] Cookies header:", req.headers.cookie || "No cookies");
+  console.log("[GET /auth/me] Session store type:", sessionStore ? sessionStore.constructor.name : "Memory store");
+  
+  // Verificar si la tabla Session existe en la base de datos
+  if (sessionStore && prisma) {
+    try {
+      const sessionCount = await prisma.session.count();
+      console.log("[GET /auth/me] Session table exists, count:", sessionCount);
+    } catch (err) {
+      console.error("[GET /auth/me] ❌ CRITICAL: Session table does not exist!", err.message);
+      console.error("[GET /auth/me] This is why sessions are not working!");
+    }
+  }
   
   if (req.session && req.session.userId) {
     try {
