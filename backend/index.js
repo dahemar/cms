@@ -17,22 +17,30 @@ const app = express();
 
 // Inicializar Prisma con manejo de errores
 let prisma;
-try {
-  prisma = new PrismaClient();
-} catch (error) {
-  console.error("[Prisma] Error initializing PrismaClient:", error);
-  throw error; // Si Prisma falla, no podemos continuar
-}
-
-// Inicializar session store con manejo de errores
 let sessionStore;
+
 try {
-  sessionStore = new PrismaSessionStore(prisma);
-  console.log("[Session Store] ✅ PrismaSessionStore initialized successfully");
+  prisma = new PrismaClient({
+    log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
+  });
+  console.log("[Prisma] ✅ PrismaClient initialized");
+  
+  // Inicializar session store con manejo de errores
+  try {
+    sessionStore = new PrismaSessionStore(prisma);
+    console.log("[Session Store] ✅ PrismaSessionStore initialized successfully");
+  } catch (error) {
+    console.error("[Session Store] ⚠️ Error initializing PrismaSessionStore:", error.message);
+    console.error("[Session Store] Will use memory store as fallback");
+    // Continuar sin store (usará memoria por defecto si falla)
+    sessionStore = undefined;
+  }
 } catch (error) {
-  console.error("[Session Store] ⚠️ Error initializing PrismaSessionStore:", error.message);
-  console.error("[Session Store] Will use memory store as fallback");
-  // Continuar sin store (usará memoria por defecto si falla)
+  console.error("[Prisma] ❌ Error initializing PrismaClient:", error);
+  console.error("[Prisma] Stack:", error.stack);
+  // No lanzar el error aquí, dejar que el servidor intente iniciar
+  // Prisma se inicializará cuando se necesite
+  prisma = null;
   sessionStore = undefined;
 }
 
