@@ -38,16 +38,19 @@ try {
 
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
 // We keep a DB mirror so sites can reference a profile via FK, but disk remains the source of truth.
-syncProfilesToDb(prisma)
-  .then((count) => {
-    console.log(`[Profiles] ✅ Synced ${count} frontend profile(s) from disk`);
-  })
-  .catch((err) => {
-    console.warn(
-      "[Profiles] ⚠️ Failed to sync profiles from disk (server will continue):",
-      err?.message || err
-    );
-  });
+// Ejecutar de forma asíncrona sin bloquear el inicio del servidor
+setTimeout(() => {
+  syncProfilesToDb(prisma)
+    .then((count) => {
+      console.log(`[Profiles] ✅ Synced ${count} frontend profile(s) from disk`);
+    })
+    .catch((err) => {
+      console.warn(
+        "[Profiles] ⚠️ Failed to sync profiles from disk (server will continue):",
+        err?.message || err
+      );
+    });
+}, 0);
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
@@ -93,7 +96,7 @@ app.use(
         );
         return "default-dev-secret-change-in-production";
       })(),
-    store: sessionStore, // Usar Prisma para almacenamiento persistente
+    store: sessionStore || undefined, // Usar Prisma para almacenamiento persistente (fallback a memoria si falla)
     resave: false,
     saveUninitialized: false,
     cookie: {
