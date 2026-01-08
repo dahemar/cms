@@ -1,11 +1,19 @@
+console.log("[Init] ========== SERVER INITIALIZATION START ==========");
+console.log("[Init] Timestamp:", new Date().toISOString());
+console.log("[Init] Node version:", process.version);
+console.log("[Init] NODE_ENV:", process.env.NODE_ENV);
+
 // Cargar dotenv solo si existe (opcional, Vercel ya tiene las variables de entorno)
 try {
+  console.log("[Init] Loading dotenv...");
   require("dotenv").config();
+  console.log("[Init] ✅ dotenv loaded");
 } catch (error) {
   // dotenv no es crítico, continuar sin él
-  console.log("[Config] dotenv not available, using environment variables");
+  console.log("[Init] ⚠️ dotenv not available, using environment variables");
 }
 
+console.log("[Init] Loading dependencies...");
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
@@ -14,12 +22,27 @@ const crypto = require("crypto");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const rateLimit = require("express-rate-limit");
-const { PrismaClient } = require("@prisma/client");
-const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailService");
-const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
-const PrismaSessionStore = require("./PrismaSessionStore");
+console.log("[Init] ✅ Basic dependencies loaded");
 
+console.log("[Init] Loading Prisma...");
+const { PrismaClient } = require("@prisma/client");
+console.log("[Init] ✅ PrismaClient imported");
+
+console.log("[Init] Loading email service...");
+const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailService");
+console.log("[Init] ✅ Email service loaded");
+
+console.log("[Init] Loading profiles registry...");
+const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
+console.log("[Init] ✅ Profiles registry loaded");
+
+console.log("[Init] Loading PrismaSessionStore...");
+const PrismaSessionStore = require("./PrismaSessionStore");
+console.log("[Init] ✅ PrismaSessionStore loaded");
+
+console.log("[Init] Creating Express app...");
 const app = express();
+console.log("[Init] ✅ Express app created");
 
 // Inicializar Prisma con manejo de errores
 let prisma;
@@ -85,6 +108,7 @@ if (isProduction && !process.env.SESSION_SECRET) {
 }
 
 // Configurar CORS con credenciales para sesiones
+console.log("[Init] Setting up CORS and body parsers...");
 try {
   app.use(
     cors({
@@ -92,11 +116,15 @@ try {
       credentials: true,
     })
   );
+  console.log("[Init] ✅ CORS configured");
+  
   // Aumentar límite del body parser para permitir imágenes base64 grandes
   app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  console.log("[Init] ✅ Body parsers configured");
 } catch (error) {
-  console.error("[Middleware] Error setting up CORS/body parsers:", error);
+  console.error("[Init] ❌ Error setting up CORS/body parsers:", error.message);
+  console.error("[Init] Error stack:", error.stack);
   // Continuar sin estos middlewares si fallan
 }
 
