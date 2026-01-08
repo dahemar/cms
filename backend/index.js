@@ -279,6 +279,20 @@ const adminRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const path = require("path");
+
+// Serve admin HTML files
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "../admin/admin.html"));
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "../admin/login.html"));
+});
+
+// Serve admin static assets
+app.use("/admin", express.static(path.join(__dirname, "../admin")));
+
 // Root route - redirect to admin panel
 app.get("/", (req, res) => {
   res.redirect("/admin");
