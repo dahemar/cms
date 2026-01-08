@@ -4371,8 +4371,9 @@
           }
           
           // Si es una ruta local (relativa), convertirla a URL del frontend React
-          // El frontend React está en http://localhost:5173
-          const frontendBaseUrl = "http://localhost:5173";
+          // En desarrollo: http://localhost:5173, en producción: usar rutas relativas
+          const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          const frontendBaseUrl = isLocal ? "http://localhost:5173" : "";
           
           // Si la ruta no empieza con /, asumir que está en /images/
           if (!url.startsWith("/")) {
@@ -4380,14 +4381,14 @@
             if (/^[^\/]+\.(jpg|jpeg|png|gif|webp)$/i.test(url)) {
               const filename = url;
               // Intentar primero en /images/landing/ (común para landing images)
-              return `${frontendBaseUrl}/images/landing/${filename}`;
+              return isLocal ? `${frontendBaseUrl}/images/landing/${filename}` : `/images/landing/${filename}`;
             }
             // Si no, asumir que está en /images/
-            return `${frontendBaseUrl}/images/${url}`;
+            return isLocal ? `${frontendBaseUrl}/images/${url}` : `/images/${url}`;
           }
           
-          // Si ya empieza con /, solo agregar el base URL
-          return `${frontendBaseUrl}${url}`;
+          // Si ya empieza con /, solo agregar el base URL en desarrollo
+          return isLocal ? `${frontendBaseUrl}${url}` : url;
         } catch (err) {
           // Si hay algún error, devolver la URL original o null
           console.error("[convertImgurUrl] Error converting URL:", err, "Original URL:", url);
