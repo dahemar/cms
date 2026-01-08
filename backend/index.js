@@ -39,18 +39,21 @@ try {
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
 // We keep a DB mirror so sites can reference a profile via FK, but disk remains the source of truth.
 // Ejecutar de forma asíncrona sin bloquear el inicio del servidor
-setTimeout(() => {
-  syncProfilesToDb(prisma)
-    .then((count) => {
-      console.log(`[Profiles] ✅ Synced ${count} frontend profile(s) from disk`);
-    })
-    .catch((err) => {
-      console.warn(
-        "[Profiles] ⚠️ Failed to sync profiles from disk (server will continue):",
-        err?.message || err
-      );
-    });
-}, 0);
+// Usar process.nextTick para asegurar que se ejecute después de que el módulo esté completamente cargado
+process.nextTick(() => {
+  if (prisma) {
+    syncProfilesToDb(prisma)
+      .then((count) => {
+        console.log(`[Profiles] ✅ Synced ${count} frontend profile(s) from disk`);
+      })
+      .catch((err) => {
+        console.warn(
+          "[Profiles] ⚠️ Failed to sync profiles from disk (server will continue):",
+          err?.message || err
+        );
+      });
+  }
+});
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
