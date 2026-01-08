@@ -37,29 +37,41 @@ let cachedProfiles = null; // Map<name, profile>
 function loadProfilesFromDisk({ forceReload = false } = {}) {
   if (cachedProfiles && !forceReload) return cachedProfiles;
 
-  const files = fs
-    .readdirSync(PROFILES_DIR)
-    .filter((f) => f.endsWith(".json"));
+  try {
+    const files = fs
+      .readdirSync(PROFILES_DIR)
+      .filter((f) => f.endsWith(".json"));
 
-  const map = new Map();
-  for (const file of files) {
-    const filePath = path.join(PROFILES_DIR, file);
-    const raw = fs.readFileSync(filePath, "utf8");
-    const profile = safeJsonParse(raw, filePath);
-    validateProfileShape(profile, filePath);
+    const map = new Map();
+    for (const file of files) {
+      try {
+        const filePath = path.join(PROFILES_DIR, file);
+        const raw = fs.readFileSync(filePath, "utf8");
+        const profile = safeJsonParse(raw, filePath);
+        validateProfileShape(profile, filePath);
 
-    // Normalize optional fields
-    profile.description =
-      profile.description && typeof profile.description === "string"
-        ? profile.description
-        : null;
-    profile.deprecated = Boolean(profile.deprecated);
+        // Normalize optional fields
+        profile.description =
+          profile.description && typeof profile.description === "string"
+            ? profile.description
+            : null;
+        profile.deprecated = Boolean(profile.deprecated);
 
-    map.set(profile.name, profile);
+        map.set(profile.name, profile);
+      } catch (fileError) {
+        console.warn(`[Profiles] ⚠️ Failed to load profile file ${file}:`, fileError.message);
+        // Continuar con otros archivos
+      }
+    }
+
+    cachedProfiles = map;
+    return cachedProfiles;
+  } catch (error) {
+    console.error("[Profiles] ❌ Error loading profiles from disk:", error.message);
+    // Retornar cache vacío en lugar de crashear
+    cachedProfiles = new Map();
+    return cachedProfiles;
   }
-
-  cachedProfiles = map;
-  return cachedProfiles;
 }
 
 function getProfileByName(name, { forceReload = false } = {}) {
