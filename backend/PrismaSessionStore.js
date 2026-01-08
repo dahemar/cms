@@ -1,8 +1,11 @@
 // Prisma-based session store for express-session
 // Compatible with Vercel serverless functions
 
-class PrismaSessionStore {
+const EventEmitter = require('events');
+
+class PrismaSessionStore extends EventEmitter {
   constructor(prisma) {
+    super();
     if (!prisma) {
       throw new Error("PrismaClient instance is required");
     }
