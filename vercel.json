@@ -7,6 +7,10 @@
       "config": {
         "maxDuration": 30
       }
+    },
+    {
+      "src": "admin/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -16,21 +20,21 @@
     },
     {
       "src": "/admin/(.*)",
-      "dest": "admin/$1",
+      "dest": "/admin/$1",
       "headers": {
         "Cache-Control": "public, max-age=3600"
       }
     },
     {
       "src": "/admin",
-      "dest": "admin/admin.html",
+      "dest": "/admin/admin.html",
       "headers": {
         "Cache-Control": "public, max-age=3600"
       }
     },
     {
       "src": "/login",
-      "dest": "admin/login.html",
+      "dest": "/admin/login.html",
       "headers": {
         "Cache-Control": "public, max-age=3600"
       }
