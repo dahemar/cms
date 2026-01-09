@@ -184,7 +184,7 @@ app.use(
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
       sameSite: isProduction ? "none" : "lax", // "none" para Vercel (requiere secure: true)
-      domain: process.env.COOKIE_DOMAIN || undefined, // Dejar undefined para que use el dominio actual
+      domain: undefined, // NO establecer domain para que funcione en todos los subdominios de Vercel
       path: "/", // Asegurar que la cookie se aplica a todas las rutas
     },
   })
