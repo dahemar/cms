@@ -3154,7 +3154,7 @@
         }
         
         try {
-          const response = await fetch(`${API_URL}/thumbnails/${id}?deleteDetailPost=true`, {
+          const response = await authFetch(`${API_URL}/thumbnails/${id}?deleteDetailPost=true`, {
             method: 'DELETE',
             credentials: 'include',
           });
@@ -3205,7 +3205,7 @@
           // Actualizar orden
           const thumbnailIds = thumbnails.map(t => t.id);
           
-          const reorderResponse = await fetch(`${API_URL}/thumbnails/reorder`, {
+          const reorderResponse = await authFetch(`${API_URL}/thumbnails/reorder`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -3644,7 +3644,7 @@
           console.log("[Thumbnail Reorder] Thumbnail IDs to send (in order):", thumbnailIds);
           console.log("[Thumbnail Reorder] Sending to:", `${API_URL}/thumbnails/reorder`);
           
-          const res = await fetch(`${API_URL}/thumbnails/reorder`, {
+          const res = await authFetch(`${API_URL}/thumbnails/reorder`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
@@ -3812,7 +3812,7 @@
         }
         
         try {
-          const response = await fetch(`${API_URL}/sections`, {
+          const response = await authFetch(`${API_URL}/sections`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -3861,7 +3861,7 @@
         }
 
         try {
-          const res = await fetch(`${API_URL}/sections/${id}`, {
+          const res = await authFetch(`${API_URL}/sections/${id}`, {
             method: "DELETE",
             credentials: "include",
           });
@@ -6006,7 +6006,7 @@
             siteId: currentSiteId.toString(),
             _t: Date.now().toString() // Cache busting
           });
-          const res = await fetch(`${API_URL}/posts/all?${params.toString()}`, {
+          const res = await authFetch(`${API_URL}/posts/all?${params.toString()}`, {
             credentials: "include",
             cache: "no-store" // Forzar no usar caché del navegador
           });
@@ -6215,7 +6215,7 @@
         }
 
         try {
-          const res = await fetch(`${API_URL}/posts/${id}?siteId=${currentSiteId}`, {
+          const res = await authFetch(`${API_URL}/posts/${id}?siteId=${currentSiteId}`, {
             method: "DELETE",
             credentials: "include",
           });
