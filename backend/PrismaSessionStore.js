@@ -100,14 +100,14 @@ class PrismaSessionStore extends EventEmitter {
         if (modelError.code === 'P2021' || modelError.message?.includes('does not exist') || modelError.message?.includes('Unknown arg')) {
           console.log('[PrismaSessionStore] Model not available, using raw query...');
           const dataStr = JSON.stringify(sessionData);
-          const expiresAtStr = expiresAt.toISOString();
-          await this.prisma.$executeRawUnsafe(`
+          // Usar $executeRaw con template literals para seguridad
+          await this.prisma.$executeRaw`
             INSERT INTO "Session" ("id", "data", "expiresAt", "createdAt")
-            VALUES ('${sessionId.replace(/'/g, "''")}', '${dataStr.replace(/'/g, "''")}', '${expiresAtStr}', NOW())
+            VALUES (${sessionId}, ${dataStr}, ${expiresAt}, NOW())
             ON CONFLICT ("id") DO UPDATE SET
               "data" = EXCLUDED."data",
               "expiresAt" = EXCLUDED."expiresAt"
-          `);
+          `;
           console.log('[PrismaSessionStore] ✅ Session saved successfully via raw query:', sessionId);
           callback(null);
         } else {

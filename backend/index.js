@@ -21,6 +21,7 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const passport = require("passport");
 const rateLimit = require("express-rate-limit");
+const jwt = require("jsonwebtoken");
 console.log("[Init] ✅ Basic dependencies loaded");
 
 console.log("[Init] Loading Prisma...");
@@ -941,16 +942,54 @@ async function resolveSiteFromDomain(req, res, next) {
 }
 
 // Middleware de autenticación
+// Middleware de autenticación (usa JWT o sesión como fallback)
 function requireAuth(req, res, next) {
-  if (req.session && req.session.userId) {
-    return next();
+  // Intentar obtener userId de JWT primero
+  let userId = req.userId; // De verifyJWT middleware si fue llamado antes
+  
+  // Si no hay JWT, intentar verificar JWT del header
+  if (!userId) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        userId = decoded.userId;
+        req.userId = userId;
+        req.userEmail = decoded.email;
+        req.isAdmin = decoded.isAdmin || false;
+      } catch (jwtError) {
+        // JWT inválido, continuar con fallback a sesión
+      }
+    }
   }
-  return res.status(401).json({ error: "Unauthorized. Please login." });
+  
+  // Fallback a sesión si no hay JWT
+  if (!userId && req.session && req.session.userId) {
+    userId = req.session.userId;
+    req.userId = userId;
+    req.userEmail = req.session.userEmail;
+    req.isAdmin = req.session.isAdmin || false;
+  }
+  
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized. Please login." });
+  }
+  
+  return next();
 }
 
-// Middleware de autenticación por sitio
+// Middleware de autenticación por sitio (usa JWT o sesión)
 async function requireSiteAuth(req, res, next) {
-  if (!req.session || !req.session.userId) {
+  // Obtener userId de JWT o sesión
+  let userId = req.userId; // De verifyJWT middleware
+  
+  // Fallback a sesión si no hay JWT
+  if (!userId && req.session && req.session.userId) {
+    userId = req.session.userId;
+  }
+  
+  if (!userId) {
     return res.status(401).json({ error: "Unauthorized. Please login." });
   }
 
@@ -964,7 +1003,7 @@ async function requireSiteAuth(req, res, next) {
   const userSite = await prisma.userSite.findUnique({
     where: {
       userId_siteId: {
-        userId: req.session.userId,
+        userId: userId,
         siteId: parseInt(siteId),
       },
     },
@@ -980,6 +1019,52 @@ async function requireSiteAuth(req, res, next) {
 }
 
 // ==================== AUTENTICACIÓN ====================
+
+// Configuración JWT
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || "default-jwt-secret-change-in-production";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "24h";
+
+// Middleware para verificar JWT
+function verifyJWT(req, res, next) {
+  // Intentar obtener token del header Authorization
+  const authHeader = req.headers.authorization;
+  let token = null;
+  
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (req.headers['x-auth-token']) {
+    token = req.headers['x-auth-token'];
+  } else if (req.query.token) {
+    token = req.query.token;
+  }
+  
+  if (!token) {
+    // Si no hay token, intentar usar sesión como fallback
+    if (req.session && req.session.userId) {
+      req.userId = req.session.userId;
+      req.userEmail = req.session.userEmail;
+      req.isAdmin = req.session.isAdmin;
+      return next();
+    }
+    return res.status(401).json({ error: "No token provided" });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.userId;
+    req.userEmail = decoded.email;
+    req.isAdmin = decoded.isAdmin || false;
+    next();
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: "Token expired" });
+    }
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+    return res.status(401).json({ error: "Token verification failed" });
+  }
+}
 
 // POST /auth/register - Registrar nuevo usuario
 app.post("/auth/register", authRateLimiter, async (req, res) => {
@@ -1189,21 +1274,46 @@ app.post("/auth/login", async (req, res) => {
       console.error("[Login] ⚠️ Error verifying session (non-critical):", verifyErr);
     }
     
-    // Asegurar que la cookie se envía en la respuesta
-    console.log("[Login] Setting response cookie, sessionID:", req.sessionID);
-    console.log("[Login] Response headers before send:", {
-      'Set-Cookie': res.getHeader('Set-Cookie'),
-      'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials')
-    });
+    // Generar JWT token
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        isAdmin: user.isAdmin || false,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+    
+    console.log("[Login] ✅ JWT token generated");
+    
+    // También mantener sesión como fallback (opcional)
+    try {
+      req.session.userId = user.id;
+      req.session.userEmail = user.email;
+      req.session.isAdmin = user.isAdmin || false;
+      await new Promise((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.warn("[Login] ⚠️ Session save failed (non-critical with JWT):", err.message);
+          } else {
+            console.log("[Login] ✅ Session also saved (fallback)");
+          }
+          resolve();
+        });
+      });
+    } catch (sessionErr) {
+      console.warn("[Login] ⚠️ Session save error (non-critical with JWT):", sessionErr.message);
+    }
     
     res.json({
       message: "Login successful",
+      token: token, // JWT token
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, isAdmin: user.isAdmin || false },
-      sessionId: req.sessionID, // Incluir sessionID en la respuesta para debugging
+      expiresIn: JWT_EXPIRES_IN,
     });
     
-    // Verificar que la cookie se estableció después de enviar la respuesta
-    console.log("[Login] Response sent, Set-Cookie header:", res.getHeader('Set-Cookie'));
+    console.log("[Login] ✅ Login response sent with JWT token");
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login" });
@@ -1225,72 +1335,52 @@ app.post("/auth/logout", async (req, res) => {
   });
 });
 
-// GET /auth/me - Obtener usuario actual
+// GET /auth/me - Obtener usuario actual (usa JWT o sesión como fallback)
 app.get("/auth/me", async (req, res) => {
-  console.log("[GET /auth/me] ========== INICIO ==========");
-  console.log("[GET /auth/me] Session ID:", req.sessionID);
-  console.log("[GET /auth/me] Session exists:", !!req.session);
-  console.log("[GET /auth/me] Session data:", req.session ? {
-    userId: req.session.userId,
-    userEmail: req.session.userEmail,
-    isAdmin: req.session.isAdmin
-  } : "No session");
-  console.log("[GET /auth/me] Cookies header:", req.headers.cookie || "No cookies");
-  console.log("[GET /auth/me] All request headers:", {
-    cookie: req.headers.cookie,
-    origin: req.headers.origin,
-    host: req.headers.host,
-    referer: req.headers.referer,
-    'user-agent': req.headers['user-agent']
-  });
-  console.log("[GET /auth/me] Session store type:", sessionStore ? sessionStore.constructor.name : "Memory store");
-  console.log("[GET /auth/me] Request origin:", req.headers.origin || "No origin header");
-  console.log("[GET /auth/me] Request host:", req.headers.host || "No host header");
+  console.log("[GET /auth/me] Checking authentication...");
   
-  // Verificar si la tabla Session existe en la base de datos
-  if (sessionStore && prisma) {
+  let userId = null;
+  let userEmail = null;
+  let isAdmin = false;
+  
+  // Intentar obtener usuario desde JWT primero
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
     try {
-      // Intentar hacer una query simple para verificar que la tabla existe
-      await prisma.$queryRaw`SELECT 1 FROM "Session" LIMIT 1`;
-      const sessionCount = await prisma.$queryRaw`SELECT COUNT(*) as count FROM "Session"`;
-      console.log("[GET /auth/me] ✅ Session table exists, count:", sessionCount[0]?.count || 0);
-      
-      // Si hay un sessionID pero no hay sesión en req.session, intentar recuperarla del store
-      if (req.sessionID && !req.session?.userId) {
-        console.log("[GET /auth/me] ⚠️ Session ID exists but no session data, attempting to load from store...");
-        await new Promise((resolve, reject) => {
-          sessionStore.get(req.sessionID, (err, sessionData) => {
-            if (err) {
-              console.error("[GET /auth/me] Error retrieving session from store:", err);
-              return resolve(); // Continuar sin sesión
-            }
-            if (sessionData) {
-              console.log("[GET /auth/me] ✅ Session found in store, restoring to req.session");
-              // Restaurar la sesión
-              Object.assign(req.session, sessionData);
-            } else {
-              console.log("[GET /auth/me] ⚠️ Session NOT found in store for sessionID:", req.sessionID);
-            }
-            resolve();
-          });
-        });
-      }
-    } catch (err) {
-      if (err.code === 'P2021' || err.message?.includes('does not exist') || err.message?.includes('relation') && err.message?.includes('does not exist')) {
-        console.error("[GET /auth/me] ❌ CRITICAL: Session table does NOT exist!");
-        console.error("[GET /auth/me] Error:", err.message);
-        console.error("[GET /auth/me] This is why sessions are not working!");
-        console.error("[GET /auth/me] Solution: Execute the SQL in backend/SESSION_TABLE_MIGRATION.sql in Supabase");
+      const decoded = jwt.verify(token, JWT_SECRET);
+      userId = decoded.userId;
+      userEmail = decoded.email;
+      isAdmin = decoded.isAdmin || false;
+      console.log("[GET /auth/me] ✅ Authenticated via JWT, userId:", userId);
+    } catch (jwtError) {
+      if (jwtError.name === 'TokenExpiredError') {
+        console.log("[GET /auth/me] ⚠️ JWT token expired");
+      } else if (jwtError.name === 'JsonWebTokenError') {
+        console.log("[GET /auth/me] ⚠️ Invalid JWT token");
       } else {
-        console.error("[GET /auth/me] Error checking Session table:", err.message);
+        console.log("[GET /auth/me] ⚠️ JWT verification error:", jwtError.message);
       }
     }
   }
   
-  if (req.session && req.session.userId) {
+  // Fallback a sesión si JWT no está disponible
+  if (!userId && req.session && req.session.userId) {
+    userId = req.session.userId;
+    userEmail = req.session.userEmail;
+    isAdmin = req.session.isAdmin || false;
+    console.log("[GET /auth/me] ✅ Authenticated via session (fallback), userId:", userId);
+  }
+  
+  // Si tenemos userId, buscar usuario en la base de datos
+  if (userId) {
     try {
+      if (!prisma) {
+        return res.status(500).json({ error: "Database connection not available" });
+      }
+      
       const user = await prisma.user.findUnique({
-        where: { id: req.session.userId },
+        where: { id: userId },
         select: { id: true, email: true, isAdmin: true, emailVerified: true },
       });
       
@@ -1306,17 +1396,16 @@ app.get("/auth/me", async (req, res) => {
           },
         });
       } else {
-        console.log("[GET /auth/me] ⚠️ User not found in database for userId:", req.session.userId);
+        console.log("[GET /auth/me] ⚠️ User not found in database for userId:", userId);
       }
     } catch (err) {
       console.error("[GET /auth/me] ❌ Error fetching user:", err);
+      return res.status(500).json({ error: "Error fetching user" });
     }
-  } else {
-    console.log("[GET /auth/me] ⚠️ No session or no userId in session");
   }
   
-  console.log("[GET /auth/me] Returning authenticated: false");
-  res.json({ authenticated: false });
+  console.log("[GET /auth/me] ⚠️ Not authenticated");
+  return res.json({ authenticated: false });
 });
 
 // GET /auth/verify-email - Verificar email con token

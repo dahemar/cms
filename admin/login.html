@@ -390,17 +390,32 @@
             return;
           }
           
-          // Verify session immediately before redirecting
+          // Verificar autenticación usando JWT token
           try {
+            const token = localStorage.getItem('auth_token');
+            console.log("[Login] Verifying authentication with JWT token");
             const meRes = await fetch(`${API_URL}/auth/me`, {
-              credentials: "include",
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token ? `Bearer ${token}` : '',
+              },
+              credentials: "include", // Mantener para fallback de sesión
+            });
+            
+            console.log("[Login] /auth/me response status:", meRes.status);
+            console.log("[Login] /auth/me response headers:", {
+              'set-cookie': meRes.headers.get('set-cookie'),
+              'content-type': meRes.headers.get('content-type')
             });
             
             if (!meRes.ok) {
+              const errorText = await meRes.text();
+              console.error("[Login] /auth/me error response:", errorText);
               throw new Error("Error verifying session");
             }
             
             const meData = await meRes.json();
+            console.log("[Login] /auth/me response data:", meData);
             
             if (meData.authenticated) {
               showMessage(`Login successful! Welcome ${data.user.email}. Redirecting...`, "success");
@@ -408,11 +423,12 @@
                 window.location.href = "admin.html";
               }, 1500);
             } else {
+              console.error("[Login] Session verification failed. Response:", meData);
               showMessage("Login successful but session not active. Please try again.", "error");
               form.classList.remove("loading");
             }
           } catch (verifyErr) {
-            console.error("Error verifying session:", verifyErr);
+            console.error("[Login] Error verifying session:", verifyErr);
             showMessage("Login successful but error verifying session. Try accessing the panel manually.", "error");
             form.classList.remove("loading");
           }
