@@ -326,17 +326,24 @@ if (isProduction) {
     corsOptions = {
       origin: (origin, callback) => {
         // Permitir requests sin origin (ej: Postman, curl, server-to-server)
-        if (!origin) return callback(null, true);
-        // Permitir cualquier subdominio de vercel.app o localhost
-        if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        if (!origin) {
+          console.log("[CORS] Request without origin, allowing");
           return callback(null, true);
         }
+        // Permitir cualquier subdominio de vercel.app o localhost
+        if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          console.log("[CORS] Allowing origin:", origin);
+          return callback(null, true);
+        }
+        console.log("[CORS] Blocking origin:", origin);
         callback(new Error('Not allowed by CORS'));
       },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
       exposedHeaders: ['Set-Cookie'],
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
     };
     console.log("[Init] CORS configured with dynamic origin function (Vercel)");
   }
@@ -363,7 +370,12 @@ if (isProduction && !process.env.SESSION_SECRET) {
 // Configurar CORS con credenciales para sesiones
 console.log("[Init] Setting up CORS and body parsers...");
 try {
+  // Aplicar CORS antes de cualquier otro middleware
   app.use(cors(corsOptions));
+  
+  // Manejar preflight requests explícitamente
+  app.options('*', cors(corsOptions));
+  
   console.log("[Init] ✅ CORS configured with credentials support");
   
   // Aumentar límite del body parser para permitir imágenes base64 grandes
