@@ -79,21 +79,39 @@ class PrismaSessionStore extends EventEmitter {
 
       console.log('[PrismaSessionStore] Saving session:', sessionId, 'userId:', sessionData.userId);
       
-      await this.prisma.session.upsert({
-        where: { id: sessionId },
-        create: {
-          id: sessionId,
-          data: JSON.stringify(sessionData),
-          expiresAt,
-        },
-        update: {
-          data: JSON.stringify(sessionData),
-          expiresAt,
-        },
-      });
-
-      console.log('[PrismaSessionStore] ✅ Session saved successfully:', sessionId);
-      callback(null);
+      // Intentar usar el modelo Session si está disponible
+      try {
+        await this.prisma.session.upsert({
+          where: { id: sessionId },
+          create: {
+            id: sessionId,
+            data: JSON.stringify(sessionData),
+            expiresAt,
+          },
+          update: {
+            data: JSON.stringify(sessionData),
+            expiresAt,
+          },
+        });
+        console.log('[PrismaSessionStore] ✅ Session saved successfully:', sessionId);
+        callback(null);
+      } catch (modelError) {
+        // Si el modelo no existe, intentar usar $executeRaw directamente
+        if (modelError.code === 'P2021' || modelError.message?.includes('does not exist') || modelError.message?.includes('Unknown arg')) {
+          console.log('[PrismaSessionStore] Model not available, using raw query...');
+          await this.prisma.$executeRawUnsafe(`
+            INSERT INTO "Session" ("id", "data", "expiresAt", "createdAt")
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT ("id") DO UPDATE SET
+              "data" = EXCLUDED."data",
+              "expiresAt" = EXCLUDED."expiresAt"
+          `, sessionId, JSON.stringify(sessionData), expiresAt);
+          console.log('[PrismaSessionStore] ✅ Session saved successfully via raw query:', sessionId);
+          callback(null);
+        } else {
+          throw modelError;
+        }
+      }
     } catch (error) {
       // Si la tabla no existe aún, loguear warning pero no crashear
       if (error.code === 'P2021' || error.message?.includes('does not exist')) {
