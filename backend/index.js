@@ -1837,7 +1837,16 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
 });
 
 // GET /posts/all - Todos los posts (incluyendo borradores) - Para admin con búsqueda, filtrado y paginación
-app.get("/posts/all", adminRateLimiter, requireAuth, resolveSiteFromDomain, async (req, res) => {
+// Middleware temporal para debug
+const debugHeaders = (req, res, next) => {
+  console.log("[DEBUG HEADERS] ========== REQUEST HEADERS ==========");
+  console.log("[DEBUG HEADERS] URL:", req.method, req.url);
+  console.log("[DEBUG HEADERS] Authorization:", req.headers.authorization ? req.headers.authorization.substring(0, 50) + "..." : "MISSING");
+  console.log("[DEBUG HEADERS] All headers:", Object.keys(req.headers));
+  next();
+};
+
+app.get("/posts/all", adminRateLimiter, debugHeaders, requireAuth, resolveSiteFromDomain, async (req, res) => {
   try {
     console.log("[GET /posts/all] ========== INICIO ==========");
     console.log("[GET /posts/all] Query params:", req.query);
