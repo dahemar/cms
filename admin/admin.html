@@ -2223,6 +2223,43 @@
       // Iniciar la espera de Quill
       waitForQuill();
 
+      // Helper para obtener headers con JWT token
+      function getAuthHeaders(additionalHeaders = {}) {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Content-Type': 'application/json',
+          ...additionalHeaders,
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+      }
+
+      // Helper para hacer fetch con autenticación JWT automática
+      async function authFetch(url, options = {}) {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+          console.log("[authFetch] ✅ Adding Authorization header with token (length:", token.length, ")");
+        } else {
+          console.warn("[authFetch] ⚠️ No token found in localStorage");
+        }
+        
+        console.log("[authFetch] Making request to:", url);
+        console.log("[authFetch] Headers:", Object.keys(headers));
+        
+        return fetch(url, {
+          ...options,
+          headers,
+          credentials: options.credentials !== undefined ? options.credentials : "include",
+        });
+      }
+
       // Cargar sitios del usuario
       async function loadSites() {
         try {
@@ -2299,43 +2336,6 @@
           console.error("[Load Sites] Error loading sites:", err);
           return false;
         }
-      }
-
-      // Helper para obtener headers con JWT token
-      function getAuthHeaders(additionalHeaders = {}) {
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-          'Content-Type': 'application/json',
-          ...additionalHeaders,
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        return headers;
-      }
-
-      // Helper para hacer fetch con autenticación JWT automática
-      async function authFetch(url, options = {}) {
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-          'Content-Type': 'application/json',
-          ...(options.headers || {}),
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-          console.log("[authFetch] ✅ Adding Authorization header with token (length:", token.length, ")");
-        } else {
-          console.warn("[authFetch] ⚠️ No token found in localStorage");
-        }
-        
-        console.log("[authFetch] Making request to:", url);
-        console.log("[authFetch] Headers:", Object.keys(headers));
-        
-        return fetch(url, {
-          ...options,
-          headers,
-          credentials: options.credentials !== undefined ? options.credentials : "include",
-        });
       }
 
       // Verificar autenticación (con JWT)
