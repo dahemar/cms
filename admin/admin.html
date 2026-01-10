@@ -110,6 +110,36 @@
         font-size: 14px;
       }
 
+      /* Estilos para el editor de título (Quill pequeño) */
+      #title-editor-container {
+        border: 1px solid #000000;
+        border-radius: 0;
+        margin-bottom: 0;
+      }
+
+      #title-editor-container .ql-toolbar {
+        border: none;
+        border-bottom: 1px solid #000000;
+        padding: 8px;
+      }
+
+      #title-editor-container .ql-toolbar .ql-formats {
+        margin-right: 15px;
+      }
+
+      #title-editor-container .ql-editor {
+        min-height: 50px;
+        max-height: 150px;
+        font-size: 14px;
+        padding: 10px;
+        overflow-y: auto;
+      }
+
+      #title-editor-container .ql-editor.ql-blank::before {
+        font-style: normal;
+        color: #999;
+      }
+
       .ql-container {
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
         border: 1px solid #000000;
@@ -484,6 +514,22 @@
         color: #000000;
         margin-bottom: 8px;
         letter-spacing: -0.3px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      
+      .post-title i,
+      .post-title em {
+        font-style: italic;
+      }
+      
+      .post-title b,
+      .post-title strong {
+        font-weight: 600;
+      }
+      
+      .post-title u {
+        text-decoration: underline;
       }
 
       .post-meta {
@@ -1239,7 +1285,8 @@
           <!-- Campos básicos -->
           <div class="form-group">
             <label for="title">Title *</label>
-            <input type="text" id="title" required />
+            <div id="title-editor-container"></div>
+            <input type="hidden" id="title" required />
           </div>
 
           <div class="form-group">
@@ -1380,7 +1427,6 @@
           </div>
 
           <div class="form-actions">
-            <button type="button" id="preview-btn">Preview</button>
             <button type="submit" id="submit-btn">Save</button>
             <button type="button" id="cancel-btn" style="display: none;">Cancel</button>
           </div>
@@ -1494,19 +1540,6 @@
       </div>
     </div>
 
-    <!-- Modal de Preview -->
-    <div id="preview-modal" class="preview-modal">
-      <div class="preview-content">
-        <div class="preview-header">
-          <h3>Post Preview</h3>
-          <button class="preview-close" id="preview-close-btn">Close</button>
-        </div>
-        <div id="preview-post" class="preview-post">
-          <!-- El contenido del preview se insertará aquí -->
-        </div>
-      </div>
-    </div>
-
     <!-- Modal de Editor de Imágenes -->
     <div id="image-editor-modal" class="preview-modal">
       <div class="preview-content" style="max-width: 900px;">
@@ -1610,6 +1643,7 @@
       let editingPostId = null;
       let currentUser = null;
       let quillEditor = null;
+      let titleQuillEditor = null;
       let tags = [];
       let sections = [];
       let selectedTags = [];
@@ -2210,9 +2244,13 @@
         if (typeof Quill !== 'undefined') {
           // Quill está cargado, inicializar
           if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initQuillEditor);
+            document.addEventListener('DOMContentLoaded', () => {
+              initQuillEditor();
+              initTitleQuillEditor();
+            });
           } else {
             initQuillEditor();
+            initTitleQuillEditor();
           }
         } else {
           // Quill aún no está cargado, esperar un poco más
@@ -2220,51 +2258,88 @@
         }
       }
 
+
+      // Inicializar editor Quill para el título
+      function initTitleQuillEditor() {
+        const container = document.getElementById('title-editor-container');
+        if (!container) {
+          console.error('Title editor container not found (#title-editor-container)');
+          return;
+        }
+        
+        if (typeof Quill === 'undefined') {
+          console.error('Quill is not loaded. Check your internet connection or the CDN.');
+          setTimeout(initTitleQuillEditor, 500);
+          return;
+        }
+        
+        try {
+          titleQuillEditor = new Quill('#title-editor-container', {
+            theme: 'snow',
+            modules: {
+              toolbar: {
+                container: [
+                  ['bold', 'italic', 'underline'],
+                  ['link']
+                ]
+              },
+              keyboard: {
+                bindings: {
+                  // Permitir Enter para insertar salto de línea (<br>)
+                  linebreak: {
+                    key: 'Enter',
+                    handler: function(range, context) {
+                      // Insertar <br> en lugar de crear un nuevo párrafo
+                      this.quill.insertText(range.index, '\n', 'user');
+                      this.quill.setSelection(range.index + 1, 'user');
+                      return false;
+                    }
+                  }
+                }
+              }
+            },
+            placeholder: 'Enter post title...'
+          });
+
+          // Actualizar el campo hidden cuando el editor cambia
+          titleQuillEditor.on('text-change', function() {
+            const html = titleQuillEditor.root.innerHTML;
+            const titleField = document.getElementById('title');
+            if (titleField) {
+              // Limpiar el HTML si solo tiene <p><br></p> o <p></p>
+              if (html === '<p><br></p>' || html === '<p></p>') {
+                titleField.value = '';
+              } else {
+                // Convertir <p> a <br> para saltos de línea más compactos
+                // Quill usa <p> para párrafos, pero queremos <br> para saltos de línea en títulos
+                let processedHtml = html;
+                // Reemplazar </p><p> por <br> (saltos de línea entre párrafos)
+                processedHtml = processedHtml.replace(/<\/p>\s*<p>/g, '<br>');
+                // Eliminar <p> al inicio y </p> al final
+                processedHtml = processedHtml.replace(/^<p>/, '').replace(/<\/p>$/g, '');
+                // Si quedan <p> y </p> sueltos, reemplazarlos por <br>
+                processedHtml = processedHtml.replace(/<p>/g, '').replace(/<\/p>/g, '<br>');
+                // Limpiar <br> duplicados al final
+                processedHtml = processedHtml.replace(/(<br\s*\/?>)+$/i, '');
+                titleField.value = processedHtml || html;
+              }
+            }
+          });
+        } catch (error) {
+          console.error('Error initializing title Quill editor:', error);
+        }
+      }
+
       // Iniciar la espera de Quill
       waitForQuill();
-
-      // Helper para obtener headers con JWT token
-      function getAuthHeaders(additionalHeaders = {}) {
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-          'Content-Type': 'application/json',
-          ...additionalHeaders,
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        return headers;
-      }
-
-      // Helper para hacer fetch con autenticación JWT automática
-      async function authFetch(url, options = {}) {
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-          'Content-Type': 'application/json',
-          ...(options.headers || {}),
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-          console.log("[authFetch] ✅ Adding Authorization header with token (length:", token.length, ")");
-        } else {
-          console.warn("[authFetch] ⚠️ No token found in localStorage");
-        }
-        
-        console.log("[authFetch] Making request to:", url);
-        console.log("[authFetch] Headers:", Object.keys(headers));
-        
-        return fetch(url, {
-          ...options,
-          headers,
-          credentials: options.credentials !== undefined ? options.credentials : "include",
-        });
-      }
 
       // Cargar sitios del usuario
       async function loadSites() {
         try {
           console.log("[Load Sites] Fetching sites from API...");
-          const res = await authFetch(`${API_URL}/sites`);
+          const res = await fetch(`${API_URL}/sites`, {
+            credentials: "include",
+          });
           console.log("[Load Sites] Response status:", res.status, res.statusText);
           
           if (res.ok) {
@@ -2338,7 +2413,7 @@
         }
       }
 
-      // Verificar autenticación (con JWT)
+      // Verificar autenticación
       async function checkAuth() {
         // Evitar múltiples redirecciones simultáneas
         if (isRedirecting) {
@@ -2347,24 +2422,12 @@
         }
         
         try {
-          console.log("[checkAuth] ========== STARTING AUTH CHECK ==========");
-          const token = localStorage.getItem('auth_token');
-          console.log("[checkAuth] JWT token present:", !!token);
-          console.log("[checkAuth] Token value (first 20 chars):", token ? token.substring(0, 20) + "..." : "null");
-          console.log("[checkAuth] API_URL:", API_URL);
-          
-          if (!authFetch) {
-            console.error("[checkAuth] ❌ authFetch is not defined!");
-            throw new Error("authFetch is not defined");
-          }
-          
-          const res = await authFetch(`${API_URL}/auth/me`);
+          console.log("[checkAuth] Checking authentication...");
+          const res = await fetch(`${API_URL}/auth/me`, {
+            credentials: "include",
+          });
           
           console.log("[checkAuth] Response status:", res.status);
-          console.log("[checkAuth] Response headers:", {
-            'content-type': res.headers.get('content-type'),
-            'authorization': res.headers.get('authorization')
-          });
           
           if (!res.ok) {
             console.log("[checkAuth] Not authenticated (status not OK), redirecting to login...");
@@ -2377,23 +2440,16 @@
           }
 
           const data = await res.json();
-          console.log("[checkAuth] ✅ Response data:", JSON.stringify(data, null, 2));
-          console.log("[checkAuth] Authenticated:", data.authenticated);
-          console.log("[checkAuth] User:", data.user?.email || "No user");
+          console.log("[checkAuth] Response data:", { authenticated: data.authenticated, user: data.user?.email });
           
           if (!data.authenticated) {
-            console.error("[checkAuth] ❌ Not authenticated (data.authenticated = false)");
-            console.error("[checkAuth] ❌ Full response:", data);
             console.log("[checkAuth] Not authenticated (data.authenticated = false), redirecting to login...");
             if (!isRedirecting) {
               isRedirecting = true;
-              console.log("[checkAuth] 🔄 REDIRECTING TO LOGIN...");
               window.location.replace("login.html");
             }
             return false;
           }
-          
-          console.log("[checkAuth] ✅ Authentication successful!");
 
           currentUser = data.user;
           isAdmin = data.user.isAdmin || false;
@@ -3804,7 +3860,9 @@
       // Cargar frontend profile del site actual
       async function loadFrontendProfile(siteId) {
         try {
-          const response = await authFetch(`${API_URL}/sites/${siteId}/frontend-profile`);
+          const response = await fetch(`${API_URL}/sites/${siteId}/frontend-profile`, {
+            credentials: 'include',
+          });
           
           if (!response.ok) {
             console.log("[Load Frontend Profile] No profile found or error:", response.status);
@@ -3984,7 +4042,9 @@
           if (currentFilters.sectionId) params.append("sectionId", currentFilters.sectionId);
           
           console.log("[Load Posts] Fetching from:", `${API_URL}/posts/all?${params.toString()}`);
-          const res = await authFetch(`${API_URL}/posts/all?${params.toString()}`);
+          const res = await fetch(`${API_URL}/posts/all?${params.toString()}`, {
+            credentials: "include",
+          });
           
           console.log("[Load Posts] Response status:", res.status);
           
@@ -4098,7 +4158,7 @@
             <div class="post-card">
               <div class="post-header">
                 <div>
-                  <div class="post-title">${escapeHtml(post.title)}</div>
+                  <div class="post-title" style="white-space: pre-wrap;">${post.title || ''}</div>
                   <div class="post-meta">
                     ID ${post.id} | 
                     <code>${escapeHtml(post.slug)}</code> | 
@@ -5741,7 +5801,23 @@
         console.log("[Post Save] ========== INICIO GUARDADO POST ==========");
 
         const id = document.getElementById("post-id").value;
-        const title = document.getElementById("title").value;
+        // Obtener título del editor Quill o del campo hidden
+        let title = '';
+        if (titleQuillEditor) {
+          const html = titleQuillEditor.root.innerHTML;
+          if (html && html !== '<p><br></p>' && html !== '<p></p>') {
+            // Convertir <p> a <br> para saltos de línea más compactos
+            let processedHtml = html;
+            processedHtml = processedHtml.replace(/<\/p>\s*<p>/g, '<br>');
+            processedHtml = processedHtml.replace(/^<p>/, '').replace(/<\/p>$/g, '');
+            processedHtml = processedHtml.replace(/<p>/g, '').replace(/<\/p>/g, '<br>');
+            processedHtml = processedHtml.replace(/(<br\s*\/?>)+$/i, '');
+            title = processedHtml || html;
+          }
+        }
+        if (!title) {
+          title = document.getElementById("title").value;
+        }
         const slug = document.getElementById("slug").value;
         const postOrder = parseInt(document.getElementById("post-order")?.value || "0") || 0;
         
@@ -5906,7 +5982,7 @@
         
         // El tipo se obtendrá automáticamente del backend basado en la sección
         const payload = { 
-          title, 
+          title, // Título HTML directamente del editor Quill
           slug, 
           content: content || "",
           published, 
@@ -6100,7 +6176,25 @@
 
           editingPostId = id;
           document.getElementById("post-id").value = id;
-          document.getElementById("title").value = post.title;
+          // Cargar título en el editor Quill
+          if (titleQuillEditor) {
+            let titleHtml = post.title || '';
+            
+            // Convertir <br> a párrafos para que Quill lo muestre correctamente
+            if (titleHtml.includes('<br>')) {
+              // Reemplazar <br> por </p><p> para que Quill lo interprete como párrafos
+              titleHtml = '<p>' + titleHtml.replace(/<br\s*\/?>/gi, '</p><p>') + '</p>';
+              // Limpiar párrafos vacíos
+              titleHtml = titleHtml.replace(/<p><\/p>/g, '').replace(/<p>\s*<\/p>/g, '');
+            } else if (titleHtml && !titleHtml.startsWith('<')) {
+              // Si no tiene HTML, envolver en <p>
+              titleHtml = '<p>' + titleHtml + '</p>';
+            }
+            
+            titleQuillEditor.root.innerHTML = titleHtml || '';
+          } else {
+            document.getElementById("title").value = post.title;
+          }
           document.getElementById("slug").value = post.slug;
           document.getElementById("post-order").value = post.order ?? 0;
           
@@ -6386,6 +6480,11 @@
         document.getElementById("section").value = "";
         const orderEl = document.getElementById("post-order");
         if (orderEl) orderEl.value = 0;
+        // Limpiar editor de título
+        if (titleQuillEditor) {
+          titleQuillEditor.root.innerHTML = '';
+        }
+        document.getElementById("title").value = "";
         selectedTags = [];
         renderSelectedTags();
         updateSectionTypeInfo();
@@ -6550,151 +6649,9 @@
         return html;
       }
 
-      // Función para mostrar preview
-      function showPreview() {
-        const title = document.getElementById("title").value;
-        const content = quillEditor ? quillEditor.root.innerHTML : document.getElementById("content").value;
-
-        // Validar que haya contenido
-        const hasBlocks = postBlocks && postBlocks.length > 0;
-        const hasContent = content && content.trim() !== '' && content !== '<p><br></p>' && content !== '<p></p>';
-        
-        if (!title && !hasBlocks && !hasContent) {
-          showMessage("Please add a title or content to preview", "error");
-          return;
-        }
-
-        // Construir HTML del preview
-        let previewHtml = "";
-
-        // Título
-        if (title) {
-          previewHtml += `<div class="preview-post-title">${escapeHtml(title)}</div>`;
-        }
-
-        // Contenido: bloques o contenido legacy
-        if (hasBlocks) {
-          previewHtml += renderBlocksForPreview(postBlocks);
-        } else if (hasContent) {
-          previewHtml += `<div class="preview-post-content">${content}</div>`;
-        }
-
-        // Insertar en el modal
-        document.getElementById("preview-post").innerHTML = previewHtml;
-
-        // Inicializar slideshows en el preview
-        setTimeout(() => {
-          initPreviewSlideshows();
-        }, 100);
-
-        // Mostrar modal
-        document.getElementById("preview-modal").classList.add("show");
-      }
-
-      // Función para inicializar slideshows en el preview
-      function initPreviewSlideshows() {
-        const slideshows = document.querySelectorAll('#preview-post .slideshow-wrapper');
-        slideshows.forEach(slideshow => {
-          const slides = slideshow.querySelectorAll('.slideshow-slide');
-          if (slides.length <= 1) return;
-          
-          let currentIndex = 0;
-          const autoPlay = slideshow.dataset.autoPlay === 'true';
-          const slideDuration = parseInt(slideshow.dataset.slideDuration) || 3000;
-          let autoPlayInterval = null;
-          
-          function showSlide(index) {
-            slides.forEach((slide, i) => {
-              slide.classList.remove('active');
-              if (i === index) slide.classList.add('active');
-            });
-            const indicators = slideshow.querySelectorAll('.slideshow-indicator');
-            indicators.forEach((indicator, i) => {
-              indicator.classList.remove('active');
-              if (i === index) indicator.classList.add('active');
-            });
-            currentIndex = index;
-          }
-          
-          function nextSlide() {
-            showSlide((currentIndex + 1) % slides.length);
-          }
-          
-          function prevSlide() {
-            showSlide((currentIndex - 1 + slides.length) % slides.length);
-          }
-          
-          const prevBtn = slideshow.querySelector('.slideshow-prev');
-          const nextBtn = slideshow.querySelector('.slideshow-next');
-          
-          if (prevBtn) prevBtn.addEventListener('click', () => { prevSlide(); resetAutoPlay(); });
-          if (nextBtn) nextBtn.addEventListener('click', () => { nextSlide(); resetAutoPlay(); });
-          
-          const indicators = slideshow.querySelectorAll('.slideshow-indicator');
-          indicators.forEach((indicator, index) => {
-            indicator.addEventListener('click', () => { showSlide(index); resetAutoPlay(); });
-          });
-          
-          function resetAutoPlay() {
-            if (autoPlayInterval) clearInterval(autoPlayInterval);
-            if (autoPlay) startAutoPlay();
-          }
-          
-          function startAutoPlay() {
-            if (autoPlay && slides.length > 1) {
-              autoPlayInterval = setInterval(nextSlide, slideDuration);
-            }
-          }
-          
-          if (autoPlay) startAutoPlay();
-          
-          slideshow.addEventListener('mouseenter', () => {
-            if (autoPlayInterval) clearInterval(autoPlayInterval);
-          });
-          slideshow.addEventListener('mouseleave', () => {
-            if (autoPlay) startAutoPlay();
-          });
-        });
-      }
-
-      // Event listeners para preview (asegurar que el DOM esté listo)
+      // Preview functionality removed
       function initPreviewListeners() {
-        const previewBtn = document.getElementById("preview-btn");
-        const previewCloseBtn = document.getElementById("preview-close-btn");
-        const previewModal = document.getElementById("preview-modal");
-
-        if (previewBtn) {
-          previewBtn.addEventListener("click", function(e) {
-            e.preventDefault();
-            showPreview();
-          });
-        } else {
-          console.error("Preview button not found");
-        }
-
-        if (previewCloseBtn) {
-          previewCloseBtn.addEventListener("click", function() {
-            if (previewModal) {
-              previewModal.classList.remove("show");
-            }
-          });
-        }
-
-        if (previewModal) {
-          // Cerrar modal al hacer click fuera
-          previewModal.addEventListener("click", function(e) {
-            if (e.target === this) {
-              this.classList.remove("show");
-            }
-          });
-        }
-
-        // Cerrar modal con ESC
-        document.addEventListener("keydown", function(e) {
-          if (e.key === "Escape" && previewModal) {
-            previewModal.classList.remove("show");
-          }
-        });
+        // Preview functionality removed
       }
 
       // Inicializar listeners cuando el DOM esté listo
