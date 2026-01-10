@@ -3984,9 +3984,7 @@
           if (currentFilters.sectionId) params.append("sectionId", currentFilters.sectionId);
           
           console.log("[Load Posts] Fetching from:", `${API_URL}/posts/all?${params.toString()}`);
-          const res = await fetch(`${API_URL}/posts/all?${params.toString()}`, {
-            credentials: "include",
-          });
+          const res = await authFetch(`${API_URL}/posts/all?${params.toString()}`);
           
           console.log("[Load Posts] Response status:", res.status);
           
