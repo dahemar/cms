@@ -172,15 +172,31 @@ try {
   if (RedisStore && redisUrl) {
     try {
       console.log("[Session Store] Attempting to initialize Redis store...");
+      console.log("[Session Store] Redis URL constructed (first 50 chars):", redisUrl.substring(0, 50) + "...");
       const redisClient = require("redis");
-      redis = redisClient.createClient({ url: redisUrl });
+      redis = redisClient.createClient({ 
+        url: redisUrl,
+        socket: {
+          reconnectStrategy: (retries) => {
+            if (retries > 10) {
+              console.error("[Session Store] ❌ Max reconnection attempts reached");
+              return new Error("Max reconnection attempts reached");
+            }
+            return Math.min(retries * 100, 3000);
+          }
+        }
+      });
       
       redis.on('error', (err) => {
-        console.error("[Session Store] ❌ Redis client error:", err);
+        console.error("[Session Store] ❌ Redis client error:", err.message);
       });
       
       redis.on('connect', () => {
         console.log("[Session Store] ✅ Redis client connected");
+      });
+      
+      redis.on('ready', () => {
+        console.log("[Session Store] ✅ Redis client ready");
       });
       
       // Conectar Redis (no bloqueante, async)
@@ -188,23 +204,36 @@ try {
         console.log("[Session Store] ✅ Redis connection established");
       }).catch((err) => {
         console.error("[Session Store] ⚠️ Redis connection failed:", err.message);
+        console.error("[Session Store] Error details:", {
+          code: err.code,
+          message: err.message
+        });
         console.log("[Session Store] Will try PrismaSessionStore as fallback");
+        sessionStore = undefined;
+        redis = undefined;
       });
       
       // Crear RedisStore - la API puede variar según la versión
+      // El store puede funcionar incluso si la conexión aún no está lista
       try {
         sessionStore = new RedisStore({ 
           client: redis,
           prefix: "sess:",
         });
+        console.log("[Session Store] ✅ Redis store created (connection may still be establishing)");
       } catch (storeError) {
         // Intentar con la API antigua de connect-redis
-        sessionStore = new RedisStore(session, { 
-          client: redis,
-          prefix: "sess:",
-        });
+        try {
+          sessionStore = new RedisStore(session, { 
+            client: redis,
+            prefix: "sess:",
+          });
+          console.log("[Session Store] ✅ Redis store created with legacy API");
+        } catch (legacyError) {
+          console.error("[Session Store] ❌ Failed to create RedisStore:", legacyError.message);
+          throw legacyError;
+        }
       }
-      console.log("[Session Store] ✅ Redis store initialized successfully");
     } catch (error) {
       console.error("[Session Store] ⚠️ Error initializing Redis store:", error.message);
       console.error("[Session Store] Error stack:", error.stack);
