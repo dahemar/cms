@@ -546,6 +546,17 @@ function auditMiddleware(action, getResource = null, getResourceId = null, getDe
 }
 
 // ==================== RATE LIMITING ====================
+// Helper para obtener IP real desde headers (soporta Vercel/proxies)
+function getRealIP(req) {
+  // En Vercel, usar x-forwarded-for o x-vercel-forwarded-for
+  const forwarded = req.headers['x-forwarded-for'] || req.headers['x-vercel-forwarded-for'];
+  if (forwarded) {
+    // x-forwarded-for puede contener múltiples IPs, tomar la primera
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.connection.remoteAddress || 'unknown';
+}
+
 // Rate limiting para endpoints públicos (más permisivo)
 const publicRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute (reduced for development)
@@ -553,6 +564,7 @@ const publicRateLimiter = rateLimit({
   message: { error: "Too many requests from this IP, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getRealIP,
 });
 
 // Rate limiting para endpoints de autenticación (más estricto)
@@ -563,6 +575,7 @@ const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // No contar requests exitosos
+  keyGenerator: getRealIP,
 });
 
 // Rate limiting para endpoints de admin (moderado)
@@ -572,6 +585,7 @@ const adminRateLimiter = rateLimit({
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getRealIP,
 });
 
 const path = require("path");
