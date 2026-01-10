@@ -65,19 +65,31 @@ try {
   // Ajustar DATABASE_URL para serverless: aumentar timeouts
   let databaseUrl = process.env.DATABASE_URL;
   if (isProduction && databaseUrl) {
-    // Asegurar que los timeouts estén configurados para serverless
-    const urlObj = new URL(databaseUrl);
-    urlObj.searchParams.set('connect_timeout', '30');
-    urlObj.searchParams.set('pool_timeout', '30');
-    urlObj.searchParams.set('statement_cache_size', '0'); // Desactivar cache para serverless
-    databaseUrl = urlObj.toString();
+    try {
+      // Asegurar que los timeouts estén configurados para serverless
+      const urlObj = new URL(databaseUrl);
+      urlObj.searchParams.set('connect_timeout', '30');
+      urlObj.searchParams.set('pool_timeout', '30');
+      urlObj.searchParams.set('statement_cache_size', '0'); // Desactivar cache para serverless
+      databaseUrl = urlObj.toString();
+      console.log("[Prisma] ✅ DATABASE_URL adjusted for serverless");
+    } catch (urlError) {
+      console.warn("[Prisma] ⚠️ Could not parse DATABASE_URL, using original:", urlError.message);
+      // Si hay error parseando la URL, usar la original
+      databaseUrl = process.env.DATABASE_URL;
+    }
+  }
+  
+  if (!databaseUrl) {
+    console.error("[Prisma] ❌ DATABASE_URL is not set!");
+    throw new Error("DATABASE_URL environment variable is required");
   }
   
   prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
     datasources: {
       db: {
-        url: databaseUrl || process.env.DATABASE_URL,
+        url: databaseUrl,
       },
     },
   });
@@ -136,11 +148,24 @@ try {
   }
 } catch (error) {
   console.error("[Prisma] ❌ Error initializing PrismaClient:", error);
+  console.error("[Prisma] Error message:", error.message);
+  console.error("[Prisma] Error code:", error.code);
+  console.error("[Prisma] DATABASE_URL present:", !!process.env.DATABASE_URL);
   console.error("[Prisma] Stack:", error.stack);
-  // No lanzar el error aquí, dejar que el servidor intente iniciar
-  // Prisma se inicializará cuando se necesite
-  prisma = null;
-  sessionStore = undefined;
+  // Intentar inicializar Prisma sin modificar la URL si falló
+  try {
+    console.log("[Prisma] ⚠️ Retrying with original DATABASE_URL...");
+    prisma = new PrismaClient({
+      log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
+    });
+    console.log("[Prisma] ✅ PrismaClient initialized with fallback");
+  } catch (fallbackError) {
+    console.error("[Prisma] ❌ Fallback initialization also failed:", fallbackError.message);
+    // No lanzar el error aquí, dejar que el servidor intente iniciar
+    // Prisma se inicializará cuando se necesite
+    prisma = null;
+    sessionStore = undefined;
+  }
 }
 
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
@@ -919,8 +944,34 @@ app.post("/auth/login", async (req, res) => {
   try {
     // Verificar que Prisma esté inicializado
     if (!prisma) {
-      console.error("[Login] Prisma not initialized");
-      return res.status(500).json({ error: "Database connection not available" });
+      console.error("[Login] ❌ Prisma not initialized");
+      console.error("[Login] DATABASE_URL:", process.env.DATABASE_URL ? "Set" : "NOT SET");
+      // Intentar inicializar Prisma si no está inicializado
+      try {
+        console.log("[Login] ⚠️ Attempting to initialize Prisma...");
+        prisma = new PrismaClient({
+          log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
+        });
+        await prisma.$connect();
+        console.log("[Login] ✅ Prisma initialized successfully");
+      } catch (initError) {
+        console.error("[Login] ❌ Failed to initialize Prisma:", initError.message);
+        return res.status(500).json({ 
+          error: "Database connection not available",
+          message: "Failed to initialize database connection. Please check server logs."
+        });
+      }
+    }
+    
+    // Verificar conexión a la base de datos
+    try {
+      await prisma.$connect();
+    } catch (connectError) {
+      console.error("[Login] ❌ Failed to connect to database:", connectError.message);
+      return res.status(500).json({ 
+        error: "Database connection failed",
+        message: connectError.message
+      });
     }
     
     const { email, password } = req.body;
