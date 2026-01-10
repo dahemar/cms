@@ -353,6 +353,16 @@
 
           const data = await res.json();
           
+          console.log("[Login] Response data:", data);
+          
+          // Guardar JWT token si está disponible
+          if (data.token) {
+            localStorage.setItem('auth_token', data.token);
+            console.log("[Login] ✅ JWT token saved to localStorage");
+          } else {
+            console.warn("[Login] ⚠️ No token in response:", data);
+          }
+          
           // Check if email verification is required
           if (data.requiresVerification) {
             const email = document.getElementById("email").value;
