@@ -56,11 +56,16 @@ let redis;
 
 // Intentar cargar Redis (preferido para serverless)
 try {
-  RedisStore = require("connect-redis").default || require("connect-redis");
-  const redisClient = require("redis");
+  const redis = require("redis");
+  RedisStore = require("connect-redis").default;
+  if (!RedisStore) {
+    // Para versiones más antiguas de connect-redis
+    RedisStore = require("connect-redis")(session);
+  }
   console.log("[Init] ✅ Redis dependencies loaded");
 } catch (error) {
   console.log("[Init] ⚠️ Redis not available, will use PrismaSessionStore");
+  console.log("[Init] Error:", error.message);
 }
 
 // Cargar PrismaSessionStore como fallback
@@ -165,21 +170,34 @@ try {
         console.log("[Session Store] ✅ Redis client connected");
       });
       
-      // Conectar Redis (no bloqueante)
-      redis.connect().catch((err) => {
+      // Conectar Redis (no bloqueante, async)
+      redis.connect().then(() => {
+        console.log("[Session Store] ✅ Redis connection established");
+      }).catch((err) => {
         console.error("[Session Store] ⚠️ Redis connection failed:", err.message);
         console.log("[Session Store] Will try PrismaSessionStore as fallback");
       });
       
-      sessionStore = new RedisStore({ 
-        client: redis,
-        prefix: "sess:",
-      });
+      // Crear RedisStore - la API puede variar según la versión
+      try {
+        sessionStore = new RedisStore({ 
+          client: redis,
+          prefix: "sess:",
+        });
+      } catch (storeError) {
+        // Intentar con la API antigua de connect-redis
+        sessionStore = new RedisStore(session, { 
+          client: redis,
+          prefix: "sess:",
+        });
+      }
       console.log("[Session Store] ✅ Redis store initialized successfully");
     } catch (error) {
       console.error("[Session Store] ⚠️ Error initializing Redis store:", error.message);
+      console.error("[Session Store] Error stack:", error.stack);
       console.log("[Session Store] Will try PrismaSessionStore as fallback");
       sessionStore = undefined;
+      redis = undefined;
     }
   }
   
