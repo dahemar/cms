@@ -68,16 +68,17 @@ try {
   console.log("[Prisma] ✅ PrismaClient initialized");
   
   // Intentar crear la tabla Session si no existe (crítico para sesiones en producción)
-  (async () => {
+  // Ejecutar de forma asíncrona sin bloquear el inicio del servidor
+  process.nextTick(async () => {
     try {
-      // Verificar si la tabla existe
+      // Verificar si la tabla existe intentando hacer una query
       await prisma.$queryRaw`SELECT 1 FROM "Session" LIMIT 1`;
       console.log("[Session Table] ✅ Session table exists");
     } catch (error) {
       if (error.code === 'P2021' || error.message?.includes('does not exist') || (error.message?.includes('relation') && error.message?.includes('does not exist'))) {
         console.log("[Session Table] ⚠️ Session table does not exist, creating it...");
         try {
-          await prisma.$executeRaw`
+          await prisma.$executeRawUnsafe(`
             CREATE TABLE IF NOT EXISTS "Session" (
                 "id" TEXT NOT NULL,
                 "data" TEXT NOT NULL,
@@ -85,20 +86,22 @@ try {
                 "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
             );
-          `;
-          await prisma.$executeRaw`
+          `);
+          await prisma.$executeRawUnsafe(`
             CREATE INDEX IF NOT EXISTS "Session_expiresAt_idx" ON "Session"("expiresAt");
-          `;
+          `);
           console.log("[Session Table] ✅ Session table created successfully!");
         } catch (createError) {
           console.error("[Session Table] ❌ Failed to create Session table:", createError.message);
+          console.error("[Session Table] Error code:", createError.code);
           console.error("[Session Table] Sessions will not persist. Please create the table manually.");
         }
       } else {
         console.error("[Session Table] ⚠️ Error checking Session table:", error.message);
+        console.error("[Session Table] Error code:", error.code);
       }
     }
-  })();
+  });
   
   // Inicializar session store con manejo de errores
   if (PrismaSessionStore) {
@@ -1015,6 +1018,13 @@ app.get("/auth/me", async (req, res) => {
     isAdmin: req.session.isAdmin
   } : "No session");
   console.log("[GET /auth/me] Cookies header:", req.headers.cookie || "No cookies");
+  console.log("[GET /auth/me] All request headers:", {
+    cookie: req.headers.cookie,
+    origin: req.headers.origin,
+    host: req.headers.host,
+    referer: req.headers.referer,
+    'user-agent': req.headers['user-agent']
+  });
   console.log("[GET /auth/me] Session store type:", sessionStore ? sessionStore.constructor.name : "Memory store");
   console.log("[GET /auth/me] Request origin:", req.headers.origin || "No origin header");
   console.log("[GET /auth/me] Request host:", req.headers.host || "No host header");
