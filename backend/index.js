@@ -326,24 +326,17 @@ if (isProduction) {
     corsOptions = {
       origin: (origin, callback) => {
         // Permitir requests sin origin (ej: Postman, curl, server-to-server)
-        if (!origin) {
-          console.log("[CORS] Request without origin, allowing");
-          return callback(null, true);
-        }
+        if (!origin) return callback(null, true);
         // Permitir cualquier subdominio de vercel.app o localhost
         if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-          console.log("[CORS] Allowing origin:", origin);
           return callback(null, true);
         }
-        console.log("[CORS] Blocking origin:", origin);
         callback(new Error('Not allowed by CORS'));
       },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
       exposedHeaders: ['Set-Cookie'],
-      preflightContinue: false,
-      optionsSuccessStatus: 204,
     };
     console.log("[Init] CORS configured with dynamic origin function (Vercel)");
   }
@@ -370,13 +363,7 @@ if (isProduction && !process.env.SESSION_SECRET) {
 // Configurar CORS con credenciales para sesiones
 console.log("[Init] Setting up CORS and body parsers...");
 try {
-  // Manejar preflight requests ANTES de cualquier otro middleware
-  // Esto es crítico para que los preflight requests no sean bloqueados
-  app.options('*', cors(corsOptions));
-  
-  // Aplicar CORS a todas las rutas
   app.use(cors(corsOptions));
-  
   console.log("[Init] ✅ CORS configured with credentials support");
   
   // Aumentar límite del body parser para permitir imágenes base64 grandes
@@ -872,8 +859,8 @@ async function resolveSiteFromDomain(req, res, next) {
     console.log(`[resolveSiteFromDomain] Body:`, req.body);
     
     // Si ya hay siteId en query params o body (admin panel), usarlo directamente
-    const siteIdFromQuery = req.query && req.query.siteId ? parseInt(String(req.query.siteId).trim()) : null;
-    const siteIdFromBody = req.body && req.body.siteId ? parseInt(String(req.body.siteId).trim()) : null;
+    const siteIdFromQuery = req.query && req.query.siteId ? parseInt(req.query.siteId) : null;
+    const siteIdFromBody = req.body && req.body.siteId ? parseInt(req.body.siteId) : null;
     const siteId = siteIdFromQuery || siteIdFromBody;
     
     console.log(`[resolveSiteFromDomain] siteIdFromQuery: ${siteIdFromQuery}, siteIdFromBody: ${siteIdFromBody}, final siteId: ${siteId}`);
