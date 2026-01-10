@@ -161,12 +161,14 @@ try {
   let redisUrl = process.env.REDIS_URL;
   if (!redisUrl && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
     // Construir Redis URL desde REST URL y TOKEN de Upstash
-    const restUrl = process.env.UPSTASH_REDIS_REST_URL.replace('https://', '').replace('http://', '');
+    const restUrl = process.env.UPSTASH_REDIS_REST_URL.replace('https://', '').replace('http://', '').replace(/\/$/, '');
     const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-    // Upstash generalmente usa puerto 6379, pero puede variar
+    // Upstash puede usar puerto 6379 o 6380, intentar 6379 primero
     const port = process.env.UPSTASH_REDIS_PORT || '6379';
-    redisUrl = `redis://default:${token}@${restUrl}:${port}`;
+    redisUrl = `redis://default:${encodeURIComponent(token)}@${restUrl}:${port}`;
     console.log("[Session Store] ✅ Constructed Redis URL from UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN");
+    console.log("[Session Store] Redis URL host:", restUrl);
+    console.log("[Session Store] Redis URL port:", port);
   }
   
   if (RedisStore && redisUrl) {
