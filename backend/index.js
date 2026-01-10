@@ -370,11 +370,12 @@ if (isProduction && !process.env.SESSION_SECRET) {
 // Configurar CORS con credenciales para sesiones
 console.log("[Init] Setting up CORS and body parsers...");
 try {
-  // Aplicar CORS antes de cualquier otro middleware
-  app.use(cors(corsOptions));
-  
-  // Manejar preflight requests explícitamente
+  // Manejar preflight requests ANTES de cualquier otro middleware
+  // Esto es crítico para que los preflight requests no sean bloqueados
   app.options('*', cors(corsOptions));
+  
+  // Aplicar CORS a todas las rutas
+  app.use(cors(corsOptions));
   
   console.log("[Init] ✅ CORS configured with credentials support");
   
