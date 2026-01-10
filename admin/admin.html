@@ -3804,9 +3804,7 @@
       // Cargar frontend profile del site actual
       async function loadFrontendProfile(siteId) {
         try {
-          const response = await fetch(`${API_URL}/sites/${siteId}/frontend-profile`, {
-            credentials: 'include',
-          });
+          const response = await authFetch(`${API_URL}/sites/${siteId}/frontend-profile`);
           
           if (!response.ok) {
             console.log("[Load Frontend Profile] No profile found or error:", response.status);
