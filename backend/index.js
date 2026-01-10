@@ -4042,15 +4042,13 @@ app.delete("/sections/:id", adminRateLimiter, requireAuth, async (req, res) => {
 // GET /sites - Obtener todos los sitios a los que el usuario tiene acceso
 app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
   try {
-    const userId = req.userId; // Usar req.userId (de JWT o sesión)
-    const isAdmin = req.isAdmin || false; // Usar req.isAdmin (de JWT o sesión)
-
-    if (!userId) {
-      return res.status(401).json({ error: "User ID not found" });
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.session.userId },
+      select: { isAdmin: true },
+    });
 
     let sites;
-    if (isAdmin) {
+    if (user && user.isAdmin) {
       // Si es admin, devolver todos los sitios
       sites = await prisma.site.findMany({
         include: {
@@ -4064,7 +4062,7 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
     } else {
       // Si no es admin, solo sus sitios
       const userSites = await prisma.userSite.findMany({
-        where: { userId: userId },
+        where: { userId: req.session.userId },
         include: {
           site: {
             include: {
@@ -4081,7 +4079,7 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
 
     res.json(sites);
   } catch (err) {
-    console.error("[GET /sites] ERROR:", err);
+    console.error(err);
     res.status(500).json({ error: "Failed to fetch sites" });
   }
 });
