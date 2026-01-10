@@ -372,11 +372,19 @@ try {
   // Aplicar CORS middleware
   app.use(cors(corsOptions));
   
-  // Manejar preflight requests explícitamente para todas las rutas
-  // Esto es necesario porque algunos navegadores no reciben correctamente la respuesta del preflight
+  // Manejar preflight requests explícitamente
+  // El middleware de CORS debería manejar esto, pero lo reforzamos para asegurar que funcione
   app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
-      // El middleware de CORS ya debería haber manejado esto, pero lo reforzamos
+      // Aplicar CORS manualmente para preflight
+      const origin = req.headers.origin;
+      if (origin && (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
+      }
       return res.status(204).end();
     }
     next();
