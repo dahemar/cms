@@ -118,3 +118,4 @@ Después de agregar las variables, deberías verlas en la lista con:
 - Busca en el menú lateral izquierdo
 - Puede estar agrupado bajo "General" o "Configuration"
 
+

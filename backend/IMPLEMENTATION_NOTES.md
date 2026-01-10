@@ -123,3 +123,4 @@ Cambiar de cookies a tokens JWT:
 3. Probar login y verificar cookies
 4. Si no funciona, implementar Redis/Upstash o JWT
 
+

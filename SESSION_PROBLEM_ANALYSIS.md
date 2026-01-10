@@ -449,3 +449,4 @@ El problema es **multifactorial** y probablemente involucra:
 **Última actualización**: 2026-01-09
 **Versión del código**: commit `36be46f`
 
+

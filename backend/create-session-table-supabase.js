@@ -107,3 +107,4 @@ if (!process.env.DATABASE_URL) {
 console.log('🚀 Iniciando creación de tabla Session...\n');
 createSessionTable();
 
+

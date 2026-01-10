@@ -61,3 +61,4 @@ redis://default:AbCdEf123456@liberal-garfish-14371.upstash.io:6379
 
 Si prefieres usar la REST URL directamente, necesitaríamos cambiar el código para usar `@upstash/redis` en lugar de `redis` client. Pero es más fácil usar la Redis URL.
 
+

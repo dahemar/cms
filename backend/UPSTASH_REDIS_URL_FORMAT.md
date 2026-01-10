@@ -88,3 +88,4 @@ Una vez que tengas la Redis URL completa:
 
 El **REST TOKEN** que tienes es el mismo password que necesitas para la Redis URL. Solo necesitas construir la URL con el formato correcto.
 
+

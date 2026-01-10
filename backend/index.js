@@ -871,8 +871,8 @@ async function resolveSiteFromDomain(req, res, next) {
     console.log(`[resolveSiteFromDomain] Body:`, req.body);
     
     // Si ya hay siteId en query params o body (admin panel), usarlo directamente
-    const siteIdFromQuery = req.query && req.query.siteId ? parseInt(req.query.siteId) : null;
-    const siteIdFromBody = req.body && req.body.siteId ? parseInt(req.body.siteId) : null;
+    const siteIdFromQuery = req.query && req.query.siteId ? parseInt(String(req.query.siteId).trim()) : null;
+    const siteIdFromBody = req.body && req.body.siteId ? parseInt(String(req.body.siteId).trim()) : null;
     const siteId = siteIdFromQuery || siteIdFromBody;
     
     console.log(`[resolveSiteFromDomain] siteIdFromQuery: ${siteIdFromQuery}, siteIdFromBody: ${siteIdFromBody}, final siteId: ${siteId}`);

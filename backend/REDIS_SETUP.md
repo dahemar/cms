@@ -103,3 +103,4 @@ Si prefieres usar Vercel KV (similar a Redis pero integrado):
 
 Pero Upstash Redis es más flexible y funciona en cualquier plataforma.
 
+

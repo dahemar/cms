@@ -95,3 +95,4 @@ El problema más probable es que **las cookies no se están guardando en el nave
 2. O verifica que la tabla Session existe (Opción 2)
 3. Revisa los logs de Vercel para ver qué está pasando exactamente
 
+

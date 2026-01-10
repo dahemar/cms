@@ -151,3 +151,4 @@ Si ves errores de conexión, verifica:
 
 **Tip**: Si no encuentras la Connection String en Database Settings, ve a **Settings** → **Database** y busca en la parte superior de la página.
 
+

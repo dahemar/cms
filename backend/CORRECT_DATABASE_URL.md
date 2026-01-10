@@ -134,3 +134,4 @@ postgresql://postgres.xxxxx:password@aws-0-us-east-1.pooler.supabase.com:6543/po
 
 **Resumen**: Para Vercel/serverless, SIEMPRE usa connection pooling (puerto 6543) con `pgbouncer=true`.
 
+
