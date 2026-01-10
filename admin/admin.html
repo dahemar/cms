@@ -2422,7 +2422,7 @@
       // Logout
       async function logout() {
         try {
-          await fetch(`${API_URL}/auth/logout`, {
+          await authFetch(`${API_URL}/auth/logout`, {
             method: "POST",
             credentials: "include",
           });
@@ -2993,7 +2993,7 @@
         try {
           if (id) {
             // Actualizar thumbnail existente
-            const updateResponse = await fetch(`${API_URL}/thumbnails/${id}`, {
+            const updateResponse = await authFetch(`${API_URL}/thumbnails/${id}`, {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',
@@ -3012,7 +3012,7 @@
             }
           } else {
             // Crear nuevo thumbnail
-            const createResponse = await fetch(`${API_URL}/thumbnails`, {
+            const createResponse = await authFetch(`${API_URL}/thumbnails`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
