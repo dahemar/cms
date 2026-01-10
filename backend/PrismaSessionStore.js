@@ -15,26 +15,50 @@ class PrismaSessionStore extends EventEmitter {
   async get(sessionId, callback) {
     try {
       console.log('[PrismaSessionStore] Getting session:', sessionId);
-      const session = await this.prisma.session.findUnique({
-        where: { id: sessionId },
-      });
+      
+      // Intentar usar el modelo Session si está disponible
+      try {
+        const session = await this.prisma.session.findUnique({
+          where: { id: sessionId },
+        });
 
-      if (!session) {
-        console.log('[PrismaSessionStore] Session not found:', sessionId);
-        return callback(null, null);
+        if (!session) {
+          console.log('[PrismaSessionStore] Session not found:', sessionId);
+          return callback(null, null);
+        }
+
+        // Check if session has expired
+        if (session.expiresAt < new Date()) {
+          console.log('[PrismaSessionStore] Session expired:', sessionId);
+          await this.destroy(sessionId);
+          return callback(null, null);
+        }
+
+        // Parse session data
+        const data = JSON.parse(session.data);
+        console.log('[PrismaSessionStore] Session retrieved successfully, userId:', data.userId);
+        callback(null, data);
+      } catch (modelError) {
+        // Si el modelo no existe, intentar usar $queryRaw directamente
+        if (modelError.code === 'P2021' || modelError.message?.includes('does not exist') || modelError.message?.includes('Unknown arg')) {
+          console.log('[PrismaSessionStore] Model not available, using raw query...');
+          const result = await this.prisma.$queryRaw`
+            SELECT * FROM "Session" WHERE "id" = ${sessionId} AND "expiresAt" > NOW()
+          `;
+          
+          if (!result || result.length === 0) {
+            console.log('[PrismaSessionStore] Session not found:', sessionId);
+            return callback(null, null);
+          }
+          
+          const session = result[0];
+          const data = JSON.parse(session.data);
+          console.log('[PrismaSessionStore] Session retrieved successfully via raw query, userId:', data.userId);
+          callback(null, data);
+        } else {
+          throw modelError;
+        }
       }
-
-      // Check if session has expired
-      if (session.expiresAt < new Date()) {
-        console.log('[PrismaSessionStore] Session expired:', sessionId);
-        await this.destroy(sessionId);
-        return callback(null, null);
-      }
-
-      // Parse session data
-      const data = JSON.parse(session.data);
-      console.log('[PrismaSessionStore] Session retrieved successfully, userId:', data.userId);
-      callback(null, data);
     } catch (error) {
       // Si la tabla no existe aún, retornar null en lugar de crashear
       if (error.code === 'P2021' || error.message?.includes('does not exist')) {
