@@ -1846,24 +1846,22 @@ app.get("/posts/all", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
       return res.status(500).json({ error: "Site ID not resolved. Please check server configuration." });
     }
     
-    if (!req.session || !req.session.userId) {
+    const userId = req.userId; // Usar req.userId (de JWT o sesión)
+    const isAdmin = req.isAdmin || false; // Usar req.isAdmin (de JWT o sesión)
+    
+    if (!userId) {
       console.error("[GET /posts/all] ERROR: User not authenticated");
       return res.status(401).json({ error: "Unauthorized. Please login." });
     }
+    
+    console.log("[GET /posts/all] User found:", { id: userId, isAdmin: isAdmin });
 
     // Verificar que el usuario tenga acceso al sitio (o sea admin)
-    const user = await prisma.user.findUnique({
-      where: { id: req.session.userId },
-      select: { isAdmin: true },
-    });
-    
-    console.log("[GET /posts/all] User found:", { id: req.session.userId, isAdmin: user?.isAdmin });
-
-    if (!user || !user.isAdmin) {
+    if (!isAdmin) {
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: req.session.userId,
+            userId: userId,
             siteId: siteId,
           },
         },
@@ -4042,15 +4040,29 @@ app.delete("/sections/:id", adminRateLimiter, requireAuth, async (req, res) => {
 // GET /sites - Obtener todos los sitios a los que el usuario tiene acceso
 app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
   try {
+    console.log("[GET /sites] ========== START ==========");
     const userId = req.userId; // Usar req.userId (de JWT o sesión)
     const isAdmin = req.isAdmin || false; // Usar req.isAdmin (de JWT o sesión)
+    
+    console.log("[GET /sites] userId:", userId, "isAdmin:", isAdmin);
+    console.log("[GET /sites] req.userId:", req.userId, "req.isAdmin:", req.isAdmin);
+    console.log("[GET /sites] req.session:", req.session ? { userId: req.session.userId, isAdmin: req.session.isAdmin } : "no session");
 
     if (!userId) {
+      console.error("[GET /sites] ERROR: User ID not found");
       return res.status(401).json({ error: "User ID not found" });
+    }
+
+    // Asegurar que userId es un número entero
+    const userIdInt = parseInt(userId);
+    if (isNaN(userIdInt)) {
+      console.error("[GET /sites] ERROR: Invalid userId type:", typeof userId, userId);
+      return res.status(400).json({ error: "Invalid user ID" });
     }
 
     let sites;
     if (isAdmin) {
+      console.log("[GET /sites] Fetching all sites (admin)");
       // Si es admin, devolver todos los sitios
       sites = await prisma.site.findMany({
         include: {
@@ -4061,10 +4073,12 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
         },
         orderBy: { createdAt: "asc" },
       });
+      console.log("[GET /sites] Found", sites.length, "sites (admin)");
     } else {
+      console.log("[GET /sites] Fetching user sites for userId:", userIdInt);
       // Si no es admin, solo sus sitios
       const userSites = await prisma.userSite.findMany({
-        where: { userId: userId },
+        where: { userId: userIdInt },
         include: {
           site: {
             include: {
@@ -4077,11 +4091,15 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
         },
       });
       sites = userSites.map(us => us.site);
+      console.log("[GET /sites] Found", sites.length, "sites for user");
     }
 
+    console.log("[GET /sites] ========== SUCCESS ==========");
     res.json(sites);
   } catch (err) {
+    console.error("[GET /sites] ========== ERROR ==========");
     console.error("[GET /sites] ERROR:", err);
+    console.error("[GET /sites] Error stack:", err.stack);
     res.status(500).json({ error: "Failed to fetch sites" });
   }
 });
