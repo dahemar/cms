@@ -62,8 +62,24 @@ let prisma;
 let sessionStore;
 
 try {
+  // Ajustar DATABASE_URL para serverless: aumentar timeouts
+  let databaseUrl = process.env.DATABASE_URL;
+  if (isProduction && databaseUrl) {
+    // Asegurar que los timeouts estén configurados para serverless
+    const urlObj = new URL(databaseUrl);
+    urlObj.searchParams.set('connect_timeout', '30');
+    urlObj.searchParams.set('pool_timeout', '30');
+    urlObj.searchParams.set('statement_cache_size', '0'); // Desactivar cache para serverless
+    databaseUrl = urlObj.toString();
+  }
+  
   prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
+    datasources: {
+      db: {
+        url: databaseUrl || process.env.DATABASE_URL,
+      },
+    },
   });
   console.log("[Prisma] ✅ PrismaClient initialized");
   
@@ -148,13 +164,50 @@ process.nextTick(() => {
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
-// En producción, si ALLOWED_ORIGINS no está configurado, permitir cualquier origen
-// Esto es necesario porque Vercel usa múltiples dominios (*.vercel.app)
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-  : (isProduction ? true : true); // Permitir cualquier origen si no está configurado (necesario para Vercel)
-  
-console.log("[Init] CORS allowed origins:", allowedOrigins === true ? "All origins (wildcard)" : allowedOrigins);
+
+// CORS: En producción, evitar wildcard cuando credentials: true
+// Usar función dinámica para permitir subdominios de Vercel
+let corsOptions;
+if (isProduction) {
+  if (process.env.ALLOWED_ORIGINS) {
+    const allowedOriginsList = process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim());
+    corsOptions = {
+      origin: allowedOriginsList,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      exposedHeaders: ['Set-Cookie'],
+    };
+    console.log("[Init] CORS allowed origins (explicit):", allowedOriginsList);
+  } else {
+    // En Vercel, permitir todos los subdominios de vercel.app dinámicamente
+    corsOptions = {
+      origin: (origin, callback) => {
+        // Permitir requests sin origin (ej: Postman, curl, server-to-server)
+        if (!origin) return callback(null, true);
+        // Permitir cualquier subdominio de vercel.app o localhost
+        if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          return callback(null, true);
+        }
+        callback(new Error('Not allowed by CORS'));
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      exposedHeaders: ['Set-Cookie'],
+    };
+    console.log("[Init] CORS configured with dynamic origin function (Vercel)");
+  }
+} else {
+  corsOptions = {
+    origin: true, // En desarrollo, permitir cualquier origen
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Set-Cookie'],
+  };
+  console.log("[Init] CORS configured for development (all origins)");
+}
 
 // Validar que SESSION_SECRET esté configurado en producción
 if (isProduction && !process.env.SESSION_SECRET) {
@@ -168,15 +221,7 @@ if (isProduction && !process.env.SESSION_SECRET) {
 // Configurar CORS con credenciales para sesiones
 console.log("[Init] Setting up CORS and body parsers...");
 try {
-  app.use(
-    cors({
-      origin: allowedOrigins,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-      exposedHeaders: ['Set-Cookie'],
-    })
-  );
+  app.use(cors(corsOptions));
   console.log("[Init] ✅ CORS configured with credentials support");
   
   // Aumentar límite del body parser para permitir imágenes base64 grandes
@@ -220,7 +265,9 @@ app.use(
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
       sameSite: isProduction ? "none" : "lax", // "none" para cross-site (requiere secure: true)
-      domain: undefined, // NO establecer domain - dejar que el navegador lo maneje
+      // En Vercel, si frontend y backend están en el mismo dominio, domain puede ser undefined
+      // Si están en subdominios diferentes, usar domain: '.vercel.app'
+      domain: isProduction ? undefined : undefined, // undefined funciona si mismo dominio
       path: "/", // Asegurar que la cookie se aplica a todas las rutas
     },
     name: 'connect.sid', // Nombre explícito de la cookie de sesión
