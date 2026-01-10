@@ -219,10 +219,11 @@ app.use(
       secure: isProduction, // true en producción (requiere HTTPS) - siempre true en Vercel
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
-      sameSite: isProduction ? "none" : "lax", // "none" para Vercel (requiere secure: true)
-      domain: undefined, // NO establecer domain para que funcione en todos los subdominios de Vercel
+      sameSite: isProduction ? "none" : "lax", // "none" para cross-site (requiere secure: true)
+      domain: undefined, // NO establecer domain - dejar que el navegador lo maneje
       path: "/", // Asegurar que la cookie se aplica a todas las rutas
     },
+    name: 'connect.sid', // Nombre explícito de la cookie de sesión
   })
 );
 console.log("[Init] ✅ Session middleware configured");
