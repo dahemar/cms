@@ -362,12 +362,14 @@ app.use(
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
       sameSite: isProduction ? "none" : "lax", // "none" para cross-site (requiere secure: true)
-      // En Vercel, si frontend y backend están en el mismo dominio, domain puede ser undefined
-      // Si están en subdominios diferentes, usar domain: '.vercel.app'
-      domain: isProduction ? undefined : undefined, // undefined funciona si mismo dominio
+      // En Vercel, NO establecer domain - dejar que el navegador lo maneje automáticamente
+      // Esto permite que funcione tanto en el mismo dominio como en subdominios
+      domain: undefined, // undefined = dominio actual (funciona mejor en Vercel)
       path: "/", // Asegurar que la cookie se aplica a todas las rutas
     },
     name: 'connect.sid', // Nombre explícito de la cookie de sesión
+    // Asegurar que la cookie se envía en todas las respuestas
+    rolling: true, // Renovar la cookie en cada request
   })
 );
 console.log("[Init] ✅ Session middleware configured");
