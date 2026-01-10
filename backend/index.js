@@ -49,9 +49,27 @@ try {
   console.log("[Init] ⚠️ Using stub functions for profiles");
 }
 
-console.log("[Init] Loading PrismaSessionStore...");
-const PrismaSessionStore = require("./PrismaSessionStore");
-console.log("[Init] ✅ PrismaSessionStore loaded");
+console.log("[Init] Loading session stores...");
+let PrismaSessionStore;
+let RedisStore;
+let redis;
+
+// Intentar cargar Redis (preferido para serverless)
+try {
+  RedisStore = require("connect-redis").default || require("connect-redis");
+  const redisClient = require("redis");
+  console.log("[Init] ✅ Redis dependencies loaded");
+} catch (error) {
+  console.log("[Init] ⚠️ Redis not available, will use PrismaSessionStore");
+}
+
+// Cargar PrismaSessionStore como fallback
+try {
+  PrismaSessionStore = require("./PrismaSessionStore");
+  console.log("[Init] ✅ PrismaSessionStore loaded");
+} catch (error) {
+  console.log("[Init] ⚠️ PrismaSessionStore not available");
+}
 
 console.log("[Init] Creating Express app...");
 const app = express();
@@ -131,19 +149,55 @@ try {
     }
   });
   
-  // Inicializar session store con manejo de errores
-  if (PrismaSessionStore) {
+  // Inicializar session store: Redis (preferido) o Prisma (fallback)
+  // Redis es ideal para serverless porque persiste entre invocaciones
+  if (RedisStore && process.env.REDIS_URL) {
+    try {
+      console.log("[Session Store] Attempting to initialize Redis store...");
+      const redisClient = require("redis");
+      redis = redisClient.createClient({ url: process.env.REDIS_URL });
+      
+      redis.on('error', (err) => {
+        console.error("[Session Store] ❌ Redis client error:", err);
+      });
+      
+      redis.on('connect', () => {
+        console.log("[Session Store] ✅ Redis client connected");
+      });
+      
+      // Conectar Redis (no bloqueante)
+      redis.connect().catch((err) => {
+        console.error("[Session Store] ⚠️ Redis connection failed:", err.message);
+        console.log("[Session Store] Will try PrismaSessionStore as fallback");
+      });
+      
+      sessionStore = new RedisStore({ 
+        client: redis,
+        prefix: "sess:",
+      });
+      console.log("[Session Store] ✅ Redis store initialized successfully");
+    } catch (error) {
+      console.error("[Session Store] ⚠️ Error initializing Redis store:", error.message);
+      console.log("[Session Store] Will try PrismaSessionStore as fallback");
+      sessionStore = undefined;
+    }
+  }
+  
+  // Fallback a PrismaSessionStore si Redis no está disponible
+  if (!sessionStore && PrismaSessionStore && prisma) {
     try {
       sessionStore = new PrismaSessionStore(prisma);
-      console.log("[Session Store] ✅ PrismaSessionStore initialized successfully");
+      console.log("[Session Store] ✅ PrismaSessionStore initialized as fallback");
     } catch (error) {
       console.error("[Session Store] ⚠️ Error initializing PrismaSessionStore:", error.message);
       console.error("[Session Store] Will use memory store as fallback");
-      // Continuar sin store (usará memoria por defecto si falla)
       sessionStore = undefined;
     }
-  } else {
-    console.log("[Session Store] ⚠️ PrismaSessionStore not available, using memory store");
+  }
+  
+  if (!sessionStore) {
+    console.log("[Session Store] ⚠️ No persistent store available, using memory store");
+    console.log("[Session Store] ⚠️ WARNING: Sessions will not persist between serverless invocations!");
     sessionStore = undefined;
   }
 } catch (error) {
