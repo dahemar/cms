@@ -373,36 +373,18 @@ try {
   app.use(cors(corsOptions));
   
   // Manejar preflight requests explícitamente
-  // Usa la misma lógica que corsOptions para ser consistente y escalable
+  // El middleware de CORS debería manejar esto, pero lo reforzamos para asegurar que funcione
   app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
+      // Aplicar CORS manualmente para preflight
       const origin = req.headers.origin;
-      
-      // Si hay ALLOWED_ORIGINS configurado, usar esa lista
-      if (process.env.ALLOWED_ORIGINS) {
-        const allowedOriginsList = process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim());
-        if (origin && allowedOriginsList.includes(origin)) {
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
-          res.setHeader('Access-Control-Max-Age', '86400');
-          return res.status(204).end();
-        }
-      } else {
-        // Usar la misma lógica dinámica: permitir cualquier subdominio de vercel.app
-        if (!origin || origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-          if (origin) {
-            res.setHeader('Access-Control-Allow-Origin', origin);
-          }
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
-          res.setHeader('Access-Control-Max-Age', '86400');
-          return res.status(204).end();
-        }
+      if (origin && (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
       }
-      // Si no coincide con ningún patrón, no añadir headers (será bloqueado)
       return res.status(204).end();
     }
     next();
