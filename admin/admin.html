@@ -2303,7 +2303,7 @@
         }
       }
 
-      // Verificar autenticación
+      // Verificar autenticación (con JWT)
       async function checkAuth() {
         // Evitar múltiples redirecciones simultáneas
         if (isRedirecting) {
@@ -2312,34 +2312,51 @@
         }
         
         try {
-          console.log("[checkAuth] Checking authentication...");
-          const res = await fetch(`${API_URL}/auth/me`, {
-            credentials: "include",
-          });
+          console.log("[checkAuth] ========== STARTING AUTH CHECK ==========");
+          const token = localStorage.getItem('auth_token');
+          console.log("[checkAuth] JWT token present:", !!token);
+          console.log("[checkAuth] Token value (first 20 chars):", token ? token.substring(0, 20) + "..." : "null");
+          console.log("[checkAuth] API_URL:", API_URL);
+          
+          const res = await authFetch(`${API_URL}/auth/me`);
           
           console.log("[checkAuth] Response status:", res.status);
+          console.log("[checkAuth] Response headers:", {
+            'content-type': res.headers.get('content-type'),
+            'authorization': res.headers.get('authorization')
+          });
           
           if (!res.ok) {
+            const errorText = await res.text();
+            console.error("[checkAuth] ❌ Response not OK. Status:", res.status);
+            console.error("[checkAuth] ❌ Error response body:", errorText);
             console.log("[checkAuth] Not authenticated (status not OK), redirecting to login...");
             if (!isRedirecting) {
               isRedirecting = true;
-              // Usar replace en vez de href para evitar que se pueda volver atrás
+              console.log("[checkAuth] 🔄 REDIRECTING TO LOGIN...");
               window.location.replace("login.html");
             }
             return false;
           }
 
           const data = await res.json();
-          console.log("[checkAuth] Response data:", { authenticated: data.authenticated, user: data.user?.email });
+          console.log("[checkAuth] ✅ Response data:", JSON.stringify(data, null, 2));
+          console.log("[checkAuth] Authenticated:", data.authenticated);
+          console.log("[checkAuth] User:", data.user?.email || "No user");
           
           if (!data.authenticated) {
+            console.error("[checkAuth] ❌ Not authenticated (data.authenticated = false)");
+            console.error("[checkAuth] ❌ Full response:", data);
             console.log("[checkAuth] Not authenticated (data.authenticated = false), redirecting to login...");
             if (!isRedirecting) {
               isRedirecting = true;
+              console.log("[checkAuth] 🔄 REDIRECTING TO LOGIN...");
               window.location.replace("login.html");
             }
             return false;
           }
+          
+          console.log("[checkAuth] ✅ Authentication successful!")
 
           currentUser = data.user;
           isAdmin = data.user.isAdmin || false;
