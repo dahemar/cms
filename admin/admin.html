@@ -2303,7 +2303,7 @@
         }
       }
 
-      // Verificar autenticación
+      // Verificar autenticación (con JWT)
       async function checkAuth() {
         // Evitar múltiples redirecciones simultáneas
         if (isRedirecting) {
@@ -2312,13 +2312,13 @@
         }
         
         try {
-          console.log("[checkAuth] Checking authentication...");
-          const res = await fetch(`${API_URL}/auth/me`, {
-            credentials: "include",
-          });
+          console.log("[checkAuth] ========== STARTING AUTH CHECK ==========");
+          const token = localStorage.getItem('auth_token');
+          console.log("[checkAuth] JWT token present:", !!token);
+          console.log("[checkAuth] Token value (first 20 chars):", token ? token.substring(0, 20) + "..." : "null");
+          console.log("[checkAuth] API_URL:", API_URL);
           
-          console.log("[checkAuth] Response status:", res.status);
-          
+          const res = await authFetch(`${API_URL}/auth/me`);          
           if (!res.ok) {
             console.log("[checkAuth] Not authenticated (status not OK), redirecting to login...");
             if (!isRedirecting) {
