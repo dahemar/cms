@@ -1822,11 +1822,12 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
 });
 
 // GET /posts/all - Todos los posts (incluyendo borradores) - Para admin con búsqueda, filtrado y paginación
-app.get("/posts/all", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (req, res) => {
+app.get("/posts/all", adminRateLimiter, requireAuth, resolveSiteFromDomain, async (req, res) => {
   try {
     console.log("[GET /posts/all] ========== INICIO ==========");
     console.log("[GET /posts/all] Query params:", req.query);
-    console.log("[GET /posts/all] Session userId:", req.session?.userId);
+    console.log("[GET /posts/all] req.userId:", req.userId);
+    console.log("[GET /posts/all] req.isAdmin:", req.isAdmin);
     console.log("[GET /posts/all] req.siteId:", req.siteId);
     
     const page = parseInt(req.query.page) || 1;
@@ -4528,6 +4529,7 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
       allowReorder: sectionSchemas[key].allowReorder !== false,
     }));
 
+    console.log("[GET /sites/:id/frontend-profile] Returning response with", schemasList.length, "schemas");
     res.json({
       siteId: site.id,
       siteName: site.name,
@@ -4539,8 +4541,11 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
       },
       sectionSchemas: schemasList,
     });
+    console.log("[GET /sites/:id/frontend-profile] ========== SUCCESS ==========");
   } catch (err) {
+    console.error("[GET /sites/:id/frontend-profile] ========== ERROR ==========");
     console.error("[GET /sites/:id/frontend-profile] ERROR:", err);
+    console.error("[GET /sites/:id/frontend-profile] Error stack:", err.stack);
     res.status(500).json({ error: "Failed to fetch site frontend profile" });
   }
 });
