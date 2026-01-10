@@ -363,7 +363,12 @@ if (isProduction && !process.env.SESSION_SECRET) {
 // Configurar CORS con credenciales para sesiones
 console.log("[Init] Setting up CORS and body parsers...");
 try {
+  // Aplicar CORS a todas las rutas
   app.use(cors(corsOptions));
+  
+  // Manejar explícitamente los preflight requests (OPTIONS)
+  app.options('*', cors(corsOptions));
+  
   console.log("[Init] ✅ CORS configured with credentials support");
   
   // Aumentar límite del body parser para permitir imágenes base64 grandes
