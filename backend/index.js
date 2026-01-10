@@ -4452,16 +4452,20 @@ app.get("/frontend-profiles/:id", adminRateLimiter, requireAuth, async (req, res
 // GET /sites/:id/frontend-profile - Obtener el profile de un site y sus schemas disponibles
 app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req, res) => {
   try {
+    console.log("[GET /sites/:id/frontend-profile] ========== START ==========");
     const siteId = parseInt(req.params.id);
-    const userId = req.session.userId;
+    const userId = req.userId; // Usar req.userId (de JWT o sesión)
+    const isAdmin = req.isAdmin || false; // Usar req.isAdmin (de JWT o sesión)
+    
+    console.log("[GET /sites/:id/frontend-profile] siteId:", siteId, "userId:", userId, "isAdmin:", isAdmin);
+
+    if (!userId) {
+      console.error("[GET /sites/:id/frontend-profile] ERROR: User ID not found");
+      return res.status(401).json({ error: "Unauthorized. Please login." });
+    }
 
     // Verificar permisos
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { isAdmin: true },
-    });
-
-    if (!user || !user.isAdmin) {
+    if (!isAdmin) {
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
@@ -4476,6 +4480,7 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
       }
     }
 
+    console.log("[GET /sites/:id/frontend-profile] Fetching site from database...");
     const site = await prisma.site.findUnique({
       where: { id: siteId },
       include: {
@@ -4484,10 +4489,14 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
     });
 
     if (!site) {
+      console.error("[GET /sites/:id/frontend-profile] ERROR: Site not found with id:", siteId);
       return res.status(404).json({ error: "Site not found" });
     }
 
+    console.log("[GET /sites/:id/frontend-profile] Site found:", site.name, "FrontendProfile:", site.frontendProfile?.name || "null");
+
     if (!site.frontendProfile) {
+      console.log("[GET /sites/:id/frontend-profile] No frontend profile assigned, returning free mode");
       return res.json({
         siteId: site.id,
         siteName: site.name,
@@ -4498,12 +4507,16 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
     }
 
     // Source of truth: disk profiles. DB is just for assignment.
+    console.log("[GET /sites/:id/frontend-profile] Looking for profile on disk:", site.frontendProfile.name);
     const diskProfile = getProfileByName(site.frontendProfile.name);
     if (!diskProfile) {
+      console.error("[GET /sites/:id/frontend-profile] ERROR: Profile not found on disk:", site.frontendProfile.name);
       return res.status(500).json({
         error: `Frontend profile "${site.frontendProfile.name}" is assigned to this site but not found on disk (backend/profiles).`,
       });
     }
+    
+    console.log("[GET /sites/:id/frontend-profile] Profile found on disk:", diskProfile.name);
 
     // Extraer los schemas disponibles
     const sectionSchemas = diskProfile.sectionSchemas || {};
