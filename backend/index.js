@@ -405,9 +405,10 @@ app.use(
       secure: isProduction, // true en producción (requiere HTTPS) - siempre true en Vercel
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
-      sameSite: isProduction ? "none" : "lax", // "none" para cross-site (requiere secure: true)
-      // En Vercel, NO establecer domain - dejar que el navegador lo maneje automáticamente
-      // Esto permite que funcione tanto en el mismo dominio como en subdominios
+      // En Vercel, si frontend y backend están en el mismo dominio, usar "lax" funciona mejor
+      // "none" solo es necesario si están en dominios completamente diferentes
+      sameSite: isProduction ? "lax" : "lax", // "lax" funciona cuando mismo dominio o navegación top-level
+      // NO establecer domain - dejar que use el dominio actual
       domain: undefined, // undefined = dominio actual (funciona mejor en Vercel)
       path: "/", // Asegurar que la cookie se aplica a todas las rutas
     },
