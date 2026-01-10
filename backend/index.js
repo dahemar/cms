@@ -944,23 +944,34 @@ async function resolveSiteFromDomain(req, res, next) {
 // Middleware de autenticación
 // Middleware de autenticación (usa JWT o sesión como fallback)
 function requireAuth(req, res, next) {
+  console.log("[requireAuth] ========== START ==========");
+  console.log("[requireAuth] URL:", req.method, req.url);
+  console.log("[requireAuth] Authorization header:", req.headers.authorization ? "Present" : "Missing");
+  console.log("[requireAuth] Session:", req.session ? { userId: req.session.userId } : "no session");
+  
   // Intentar obtener userId de JWT primero
   let userId = req.userId; // De verifyJWT middleware si fue llamado antes
+  console.log("[requireAuth] req.userId (from previous middleware):", userId);
   
   // Si no hay JWT, intentar verificar JWT del header
   if (!userId) {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
+      console.log("[requireAuth] JWT token found, length:", token.length);
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
         userId = decoded.userId;
         req.userId = userId;
         req.userEmail = decoded.email;
         req.isAdmin = decoded.isAdmin || false;
+        console.log("[requireAuth] ✅ JWT verified, userId:", userId, "isAdmin:", req.isAdmin);
       } catch (jwtError) {
+        console.error("[requireAuth] ❌ JWT verification failed:", jwtError.message);
         // JWT inválido, continuar con fallback a sesión
       }
+    } else {
+      console.log("[requireAuth] No Authorization header or not Bearer token");
     }
   }
   
@@ -970,12 +981,16 @@ function requireAuth(req, res, next) {
     req.userId = userId;
     req.userEmail = req.session.userEmail;
     req.isAdmin = req.session.isAdmin || false;
+    console.log("[requireAuth] ✅ Using session, userId:", userId, "isAdmin:", req.isAdmin);
   }
   
   if (!userId) {
+    console.error("[requireAuth] ❌ No userId found, returning 401");
     return res.status(401).json({ error: "Unauthorized. Please login." });
   }
   
+  console.log("[requireAuth] ✅ Authentication successful, userId:", userId);
+  console.log("[requireAuth] ========== END ==========");
   return next();
 }
 
