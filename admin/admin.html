@@ -2227,9 +2227,7 @@
       async function loadSites() {
         try {
           console.log("[Load Sites] Fetching sites from API...");
-          const res = await fetch(`${API_URL}/sites`, {
-            credentials: "include",
-          });
+          const res = await authFetch(`\${API_URL}/sites`);
           console.log("[Load Sites] Response status:", res.status, res.statusText);
           
           if (res.ok) {
@@ -2303,45 +2301,7 @@
         }
       }
 
-      
-      // Helper para obtener headers con JWT token
-      function getAuthHeaders(additionalHeaders = {}) {
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-          'Content-Type': 'application/json',
-          ...additionalHeaders,
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        return headers;
-      }
-
-      // Helper para hacer fetch con autenticación JWT automática
-      async function authFetch(url, options = {}) {
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-          'Content-Type': 'application/json',
-          ...(options.headers || {}),
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-          console.log("[authFetch] ✅ Adding Authorization header with token (length:", token.length, ")");
-        } else {
-          console.warn("[authFetch] ⚠️ No token found in localStorage");
-        }
-        
-        console.log("[authFetch] Making request to:", url);
-        console.log("[authFetch] Headers:", Object.keys(headers));
-        
-        return fetch(url, {
-          ...options,
-          headers,
-          credentials: options.credentials !== undefined ? options.credentials : "include",
-        });
-      }
-
-// Verificar autenticación
+      // Verificar autenticación
       async function checkAuth() {
         // Evitar múltiples redirecciones simultáneas
         if (isRedirecting) {
@@ -2350,24 +2310,10 @@
         }
         
         try {
-          console.log("[checkAuth] ========== STARTING AUTH CHECK ==========");
-          const token = localStorage.getItem('auth_token');
-          console.log("[checkAuth] JWT token present:", !!token);
-          console.log("[checkAuth] Token value (first 20 chars):", token ? token.substring(0, 20) + "..." : "null");
-          console.log("[checkAuth] API_URL:", API_URL);
-          
-          if (!authFetch) {
-            console.error("[checkAuth] ❌ authFetch is not defined!");
-            throw new Error("authFetch is not defined");
-          }
-          
-          const res = await authFetch(`${API_URL}/auth/me`);
+          console.log("[checkAuth] Checking authentication...");
+          const res = await authFetch(`\${API_URL}/auth/me`);
           
           console.log("[checkAuth] Response status:", res.status);
-          console.log("[checkAuth] Response headers:", {
-            'content-type': res.headers.get('content-type'),
-            'authorization': res.headers.get('authorization')
-          });
           
           if (!res.ok) {
             console.log("[checkAuth] Not authenticated (status not OK), redirecting to login...");
@@ -2592,9 +2538,7 @@
         if (!currentSiteId) return;
         
         try {
-          const res = await fetch(`${API_URL}/tags?siteId=${currentSiteId}`, {
-            credentials: "include",
-          });
+          const res = await authFetch(`\${API_URL}/tags?siteId=${currentSiteId}`);
           if (res.ok) {
             tags = await res.json();
             const filterTagSelect = document.getElementById("filter-tag");
@@ -2619,9 +2563,7 @@
         if (!currentSiteId) return;
         
         try {
-          const res = await fetch(`${API_URL}/sections?siteId=${currentSiteId}`, {
-            credentials: "include",
-          });
+          const res = await authFetch(`\${API_URL}/sections?siteId=${currentSiteId}`);
           if (res.ok) {
             sections = await res.json();
             // Filtrar secciones "detailPage" por si acaso (aunque el backend ya las filtra)
@@ -2838,9 +2780,7 @@
       // Cargar thumbnails de una sección
       async function loadThumbnails(sectionId) {
         try {
-          const response = await fetch(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
-            credentials: 'include',
-          });
+          const response = await authFetch(`\${API_URL}/thumbnails?sectionId=${sectionId}`);
           
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -2968,9 +2908,7 @@
       // Abrir modal para editar miniatura
       async function editThumbnail(id) {
         try {
-          const response = await fetch(`${API_URL}/thumbnails?sectionId=${document.getElementById("section").value}`, {
-            credentials: 'include',
-          });
+          const response = await authFetch(`\${API_URL}/thumbnails?sectionId=${document.getElementById("section").value}`);
           
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -3186,9 +3124,7 @@
       // Editar página de detalle de una miniatura
       async function editThumbnailDetail(thumbnailId) {
         try {
-          const response = await fetch(`${API_URL}/thumbnails/${thumbnailId}/detail`, {
-            credentials: 'include',
-          });
+          const response = await authFetch(`\${API_URL}/thumbnails/${thumbnailId}/detail`);
           
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -3248,9 +3184,7 @@
           if (!sectionId) return;
           
           // Obtener thumbnails actuales
-          const response = await fetch(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
-            credentials: 'include',
-          });
+          const response = await authFetch(`\${API_URL}/thumbnails?sectionId=${sectionId}`);
           
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -3504,9 +3438,7 @@
         draggedIndex = null;
         try {
           console.log("[Thumbnail Reorder] Fetching thumbnails from:", `${API_URL}/thumbnails?sectionId=${sectionId}`);
-          const res = await fetch(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
-            credentials: "include"
-          });
+          const res = await authFetch(`\${API_URL}/thumbnails?sectionId=${sectionId}`);
           console.log("[Thumbnail Reorder] Response status:", res.status, res.ok);
           if (!res.ok) throw new Error("Failed to load thumbnails");
           const thumbnails = await res.json();
@@ -3800,9 +3732,7 @@
       // Cargar frontend profile del site actual
       async function loadFrontendProfile(siteId) {
         try {
-          const response = await fetch(`${API_URL}/sites/${siteId}/frontend-profile`, {
-            credentials: 'include',
-          });
+          const response = await authFetch(`\${API_URL}/sites/${siteId}/frontend-profile`);
           
           if (!response.ok) {
             console.log("[Load Frontend Profile] No profile found or error:", response.status);
@@ -3982,9 +3912,7 @@
           if (currentFilters.sectionId) params.append("sectionId", currentFilters.sectionId);
           
           console.log("[Load Posts] Fetching from:", `${API_URL}/posts/all?${params.toString()}`);
-          const res = await fetch(`${API_URL}/posts/all?${params.toString()}`, {
-            credentials: "include",
-          });
+          const res = await authFetch(`\${API_URL}/posts/all?${params.toString()}`);
           
           console.log("[Load Posts] Response status:", res.status);
           
@@ -6115,9 +6043,7 @@
             try {
               const sectionId = post.sectionId;
               if (sectionId) {
-                const thumbRes = await fetch(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
-                  credentials: "include"
-                });
+                const thumbRes = await authFetch(`\${API_URL}/thumbnails?sectionId=${sectionId}`);
                 if (thumbRes.ok) {
                   const thumbnails = await thumbRes.json();
                   // Buscar el thumbnail que tiene este post como detailPost
@@ -8045,9 +7971,7 @@
           console.log("[Load Template] Loading template for section:", sectionId);
           console.log("[Load Template] Current postBlocks length:", postBlocks.length);
           
-          const response = await fetch(`${API_URL}/sections/${sectionId}/template`, {
-            credentials: 'include',
-          });
+          const response = await authFetch(`\${API_URL}/sections/${sectionId}/template`);
           
           console.log("[Load Template] Response status:", response.status);
           
@@ -8186,9 +8110,7 @@
       // Cargar estadísticas de auditoría
       async function loadAuditStats() {
         try {
-          const res = await fetch(`${API_URL}/audit-logs/stats`, {
-            credentials: "include",
-          });
+          const res = await authFetch(`\${API_URL}/audit-logs/stats`);
           if (res.ok) {
             const stats = await res.json();
             document.getElementById("audit-total-logs").textContent = stats.totalLogs || 0;
@@ -8213,9 +8135,7 @@
           if (auditFilters.startDate) params.append("startDate", auditFilters.startDate);
           if (auditFilters.endDate) params.append("endDate", auditFilters.endDate);
           
-          const res = await fetch(`${API_URL}/audit-logs?${params.toString()}`, {
-            credentials: "include",
-          });
+          const res = await authFetch(`\${API_URL}/audit-logs?${params.toString()}`);
           
           if (res.status === 403) {
             document.getElementById("audit-logs-list").innerHTML = 
