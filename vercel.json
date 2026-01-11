@@ -24,31 +24,31 @@
       "dest": "backend/index.js"
     },
     {
-      "src": "/sites(.*)",
+      "src": "/sites(.*)?",
       "dest": "backend/index.js"
     },
     {
-      "src": "/posts/(.*)",
+      "src": "/posts(.*)?",
       "dest": "backend/index.js"
     },
     {
-      "src": "/sections/(.*)",
+      "src": "/sections(.*)?",
       "dest": "backend/index.js"
     },
     {
-      "src": "/tags/(.*)",
+      "src": "/tags(.*)?",
       "dest": "backend/index.js"
     },
     {
-      "src": "/thumbnails/(.*)",
+      "src": "/thumbnails(.*)?",
       "dest": "backend/index.js"
     },
     {
-      "src": "/frontend-profiles/(.*)",
+      "src": "/frontend-profiles(.*)?",
       "dest": "backend/index.js"
     },
     {
-      "src": "/audit-logs/(.*)",
+      "src": "/audit-logs(.*)?",
       "dest": "backend/index.js"
     },
     {
