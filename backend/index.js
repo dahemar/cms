@@ -107,6 +107,14 @@ console.log("[Init] ✅ Express app created");
 // and other proxy-aware behaviors work as expected.
 app.set('trust proxy', 1);
 
+// Public cache headers (Vercel CDN). Only use on endpoints whose response is NOT user-specific.
+function setPublicCache(res, { sMaxAge = 60, staleWhileRevalidate = 300 } = {}) {
+  res.setHeader(
+    'Cache-Control',
+    `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=${staleWhileRevalidate}`
+  );
+}
+
 // Configuración de entorno (debe estar antes de usarse)
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -1948,6 +1956,7 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
     const type = req.query.type || null;
     const sectionId = req.query.sectionId ? parseInt(req.query.sectionId) : null;
     const slug = req.query.slug || null; // Búsqueda por slug (para posts individuales)
+    const includeBlocks = String(req.query.includeBlocks ?? 'true').toLowerCase() !== 'false';
     
     // siteId viene del middleware resolveSiteFromDomain
     const siteId = req.siteId;
@@ -1956,6 +1965,9 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
       console.error("[GET /posts] ERROR: siteId is not set by middleware");
       return res.status(500).json({ error: "Site ID not resolved. Please check server configuration." });
     }
+
+    // Cache en CDN para queries públicas (se invalida por TTL). No aplicar a errores.
+    setPublicCache(res, { sMaxAge: 60, staleWhileRevalidate: 300 });
     
     // Si se busca por slug, devolver solo ese post
     if (slug) {
@@ -1968,9 +1980,13 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
         include: {
           tags: true,
           section: true,
-          blocks: {
-            orderBy: { order: "asc" },
-          },
+          ...(includeBlocks
+            ? {
+                blocks: {
+                  orderBy: { order: "asc" },
+                },
+              }
+            : {}),
         },
       });
       
@@ -1982,7 +1998,7 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
     }
     
     // Intentar obtener del cache (solo para posts publicados sin búsqueda)
-    const cacheKey = getCacheKey("posts", { siteId, page, limit, search, tagId, type, sectionId });
+    const cacheKey = getCacheKey("posts", { siteId, page, limit, search, tagId, type, sectionId, includeBlocks });
     if (!search && !tagId && !type) { // Solo cachear queries simples
       const cached = getCached(cacheKey);
       if (cached) {
@@ -2031,9 +2047,13 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
         include: {
           tags: true,
           section: true,
-          blocks: {
-            orderBy: { order: "asc" },
-          },
+          ...(includeBlocks
+            ? {
+                blocks: {
+                  orderBy: { order: "asc" },
+                },
+              }
+            : {}),
         },
         orderBy: [{ order: "asc" }, { createdAt: "desc" }],
         skip,
@@ -3528,9 +3548,11 @@ app.put("/posts/:postId/blocks/reorder", adminRateLimiter, resolveSiteFromDomain
 // GET /tags - Obtener todos los tags (filtrados por siteId)
 app.get("/tags", publicRateLimiter, resolveSiteFromDomain, async (req, res) => {
   try {
-    console.log("[GET /tags] ========== INICIO ==========");
-    console.log("[GET /tags] Query params:", req.query);
-    console.log("[GET /tags] req.siteId:", req.siteId);
+    if (!isProduction) {
+      console.log("[GET /tags] ========== INICIO ==========");
+      console.log("[GET /tags] Query params:", req.query);
+      console.log("[GET /tags] req.siteId:", req.siteId);
+    }
     
     // siteId viene del middleware resolveSiteFromDomain
     const siteId = req.siteId;
@@ -3540,7 +3562,9 @@ app.get("/tags", publicRateLimiter, resolveSiteFromDomain, async (req, res) => {
       return res.status(500).json({ error: "Site ID not resolved. Please check server configuration." });
     }
 
-    console.log("[GET /tags] Fetching tags for siteId:", siteId);
+    setPublicCache(res, { sMaxAge: 300, staleWhileRevalidate: 600 });
+
+    if (!isProduction) console.log("[GET /tags] Fetching tags for siteId:", siteId);
     
     const tags = await prisma.tag.findMany({
       where: { siteId: siteId },
@@ -3552,8 +3576,10 @@ app.get("/tags", publicRateLimiter, resolveSiteFromDomain, async (req, res) => {
       },
     });
     
-    console.log("[GET /tags] Tags found:", tags.length);
-    console.log("[GET /tags] ========== FIN ==========");
+    if (!isProduction) {
+      console.log("[GET /tags] Tags found:", tags.length);
+      console.log("[GET /tags] ========== FIN ==========");
+    }
     
     res.json(tags);
   } catch (err) {
@@ -3660,6 +3686,7 @@ app.get("/thumbnails", publicRateLimiter, resolveSiteFromDomain, async (req, res
   try {
     const sectionId = req.query.sectionId ? parseInt(req.query.sectionId) : null;
     const siteId = req.siteId;
+    const includeDetail = String(req.query.includeDetail ?? 'true').toLowerCase() !== 'false';
     
     if (!siteId) {
       return res.status(500).json({ error: "Site ID not resolved" });
@@ -3668,21 +3695,25 @@ app.get("/thumbnails", publicRateLimiter, resolveSiteFromDomain, async (req, res
     if (!sectionId) {
       return res.status(400).json({ error: "sectionId is required" });
     }
+
+    setPublicCache(res, { sMaxAge: 60, staleWhileRevalidate: 300 });
     
     const thumbnails = await prisma.thumbnail.findMany({
       where: {
         sectionId: sectionId,
         siteId: siteId,
       },
-      include: {
-        detailPost: {
-          include: {
-            blocks: {
-              orderBy: { order: "asc" },
+      include: includeDetail
+        ? {
+            detailPost: {
+              include: {
+                blocks: {
+                  orderBy: { order: "asc" },
+                },
+              },
             },
-          },
-        },
-      },
+          }
+        : undefined,
       orderBy: { order: "asc" },
     });
     
@@ -4217,9 +4248,11 @@ async function generateUniqueSectionSlug(baseSlug, siteId) {
 // GET /sections - Obtener todas las secciones (con jerarquía, filtradas por siteId)
 app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) => {
   try {
-    console.log("[GET /sections] ========== INICIO ==========");
-    console.log("[GET /sections] Query params:", req.query);
-    console.log("[GET /sections] req.siteId:", req.siteId);
+    if (!isProduction) {
+      console.log("[GET /sections] ========== INICIO ==========");
+      console.log("[GET /sections] Query params:", req.query);
+      console.log("[GET /sections] req.siteId:", req.siteId);
+    }
     
     // siteId viene del middleware resolveSiteFromDomain
     const siteId = req.siteId;
@@ -4229,7 +4262,9 @@ app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) 
       return res.status(500).json({ error: "Site ID not resolved. Please check server configuration." });
     }
 
-    console.log("[GET /sections] Fetching sections for siteId:", siteId);
+    setPublicCache(res, { sMaxAge: 300, staleWhileRevalidate: 600 });
+
+    if (!isProduction) console.log("[GET /sections] Fetching sections for siteId:", siteId);
     
     const sections = await prisma.section.findMany({
       where: { 
@@ -4248,8 +4283,10 @@ app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) 
       },
     });
     
-    console.log("[GET /sections] Sections found:", sections.length);
-    console.log("[GET /sections] ========== FIN ==========");
+    if (!isProduction) {
+      console.log("[GET /sections] Sections found:", sections.length);
+      console.log("[GET /sections] ========== FIN ==========");
+    }
     
     res.json(sections);
   } catch (err) {
