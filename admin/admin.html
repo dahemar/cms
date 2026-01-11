@@ -6225,7 +6225,7 @@
             try {
               const sectionId = post.sectionId;
               if (sectionId) {
-                const thumbRes = await fetch(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
+                const thumbRes = await fetchWithAuth(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
                   credentials: "include"
                 });
                 if (thumbRes.ok) {
