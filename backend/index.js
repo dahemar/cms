@@ -331,11 +331,8 @@ if (isProduction) {
           return callback(null, true);
         }
         console.log("[CORS] Checking origin:", origin);
-        // Permitir cualquier subdominio de vercel.app, localhost, o cualquier dominio de Vercel
-        if (origin.includes('.vercel.app') || 
-            origin.includes('localhost') || 
-            origin.includes('127.0.0.1') ||
-            origin.endsWith('.vercel.app')) {
+        // Permitir cualquier subdominio de vercel.app o localhost
+        if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
           console.log("[CORS] Origin allowed:", origin);
           return callback(null, true);
         }
@@ -4109,7 +4106,6 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
       sites = await prisma.site.findMany({
         include: {
           config: true,
-          frontendProfile: true,
           _count: {
             select: { posts: true, sections: true },
           },
@@ -4126,7 +4122,6 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
           site: {
             include: {
               config: true,
-              frontendProfile: true,
               _count: {
                 select: { posts: true, sections: true },
               },
