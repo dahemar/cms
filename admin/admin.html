@@ -1638,7 +1638,8 @@
       // Detectar entorno y configurar URLs dinámicamente
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       const API_URL = isLocalhost ? "http://localhost:3000" : window.location.origin;
-      const FRONTEND_BASE_URL = isLocalhost ? "http://localhost:5173" : window.location.origin;
+      // En producción, el frontend está en sympaathy-v2.vercel.app, no en el mismo dominio del CMS
+      const FRONTEND_BASE_URL = isLocalhost ? "http://localhost:5173" : "https://sympaathy-v2.vercel.app";
       
       let editingPostId = null;
       let currentUser = null;
