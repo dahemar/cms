@@ -1450,29 +1450,32 @@ app.post("/auth/login", async (req, res) => {
       cookie: req.session.cookie
     });
     
-    // Guardar sesión explícitamente antes de enviar respuesta (crítico en serverless)
-    await new Promise((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) {
-          console.error("[Login] ❌ Error saving session:", err);
-          console.error("[Login] Session save error details:", {
-            message: err.message,
-            stack: err.stack,
-            code: err.code
-          });
-          return reject(err);
-        }
-        console.log("[Login] ✅ Session saved successfully");
-        console.log("[Login] Session ID:", req.sessionID);
-        console.log("[Login] Session cookie will be set:", {
-          secure: req.session.cookie.secure,
-          sameSite: req.session.cookie.sameSite,
-          httpOnly: req.session.cookie.httpOnly,
-          maxAge: req.session.cookie.maxAge
+    // Guardar sesión explícitamente antes de enviar respuesta.
+    // NOTA: Esto NO debe tumbar el login: el flujo principal usa JWT.
+    let sessionSaveError = null;
+    try {
+      await new Promise((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) return reject(err);
+          resolve();
         });
-        resolve();
       });
-    });
+      console.log("[Login] ✅ Session saved successfully");
+      console.log("[Login] Session ID:", req.sessionID);
+      console.log("[Login] Session cookie will be set:", {
+        secure: req.session.cookie.secure,
+        sameSite: req.session.cookie.sameSite,
+        httpOnly: req.session.cookie.httpOnly,
+        maxAge: req.session.cookie.maxAge
+      });
+    } catch (err) {
+      sessionSaveError = err;
+      console.error("[Login] ⚠️ Session save failed (continuing with JWT):", {
+        message: err.message,
+        stack: err.stack,
+        code: err.code
+      });
+    }
     
     // Verificar que la sesión se guardó correctamente
     try {
@@ -1509,30 +1512,12 @@ app.post("/auth/login", async (req, res) => {
     
     console.log("[Login] ✅ JWT token generated");
     
-    // También mantener sesión como fallback (opcional)
-    try {
-      req.session.userId = user.id;
-      req.session.userEmail = user.email;
-      req.session.isAdmin = user.isAdmin || false;
-      await new Promise((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) {
-            console.warn("[Login] ⚠️ Session save failed (non-critical with JWT):", err.message);
-          } else {
-            console.log("[Login] ✅ Session also saved (fallback)");
-          }
-          resolve();
-        });
-      });
-    } catch (sessionErr) {
-      console.warn("[Login] ⚠️ Session save error (non-critical with JWT):", sessionErr.message);
-    }
-    
     res.json({
       message: "Login successful",
       token: token, // JWT token
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, isAdmin: user.isAdmin || false },
       expiresIn: JWT_EXPIRES_IN,
+      sessionSaved: !sessionSaveError,
     });
     
     console.log("[Login] ✅ Login response sent with JWT token");
