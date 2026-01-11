@@ -1,461 +1,114 @@
-console.log("[Init] ========== SERVER INITIALIZATION START ==========");
-console.log("[Init] Timestamp:", new Date().toISOString());
-console.log("[Init] Node version:", process.version);
-console.log("[Init] NODE_ENV:", process.env.NODE_ENV);
+require("dotenv").config();
 
-// Cargar dotenv solo si existe (opcional, Vercel ya tiene las variables de entorno)
-try {
-  console.log("[Init] Loading dotenv...");
-  require("dotenv").config();
-  console.log("[Init] ✅ dotenv loaded");
-} catch (error) {
-  // dotenv no es crítico, continuar sin él
-  console.log("[Init] ⚠️ dotenv not available, using environment variables");
-}
-
-console.log("[Init] Loading dependencies...");
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const passport = require("passport");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const rateLimit = require("express-rate-limit");
 const jwt = require("jsonwebtoken");
-console.log("[Init] ✅ Basic dependencies loaded");
-
-console.log("[Init] Loading Prisma...");
 const { PrismaClient } = require("@prisma/client");
-console.log("[Init] ✅ PrismaClient imported");
-
-console.log("[Init] Loading email service...");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailService");
-console.log("[Init] ✅ Email service loaded");
+const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
 
-console.log("[Init] Loading profiles registry...");
-let getProfileByName, listProfiles, syncProfilesToDb;
-try {
-  const registry = require("./profiles/registry");
-  getProfileByName = registry.getProfileByName;
-  listProfiles = registry.listProfiles;
-  syncProfilesToDb = registry.syncProfilesToDb;
-  console.log("[Init] ✅ Profiles registry loaded");
-} catch (error) {
-  console.error("[Init] ❌ Error loading profiles registry:", error.message);
-  console.error("[Init] Error stack:", error.stack);
-  // Crear funciones stub para evitar crashes
-  getProfileByName = () => null;
-  listProfiles = () => [];
-  syncProfilesToDb = async () => 0;
-  console.log("[Init] ⚠️ Using stub functions for profiles");
-}
-
-console.log("[Init] Loading session stores...");
-let PrismaSessionStore;
-let RedisStore;
-let redis;
-
-// Intentar cargar Redis (preferido para serverless)
-try {
-  const redis = require("redis");
-  RedisStore = require("connect-redis").default;
-  if (!RedisStore) {
-    // Para versiones más antiguas de connect-redis
-    RedisStore = require("connect-redis")(session);
-  }
-  console.log("[Init] ✅ Redis dependencies loaded");
-} catch (error) {
-  console.log("[Init] ⚠️ Redis not available, will use PrismaSessionStore");
-  console.log("[Init] Error:", error.message);
-}
-
-// Cargar PrismaSessionStore como fallback
-try {
-  PrismaSessionStore = require("./PrismaSessionStore");
-  console.log("[Init] ✅ PrismaSessionStore loaded");
-} catch (error) {
-  console.log("[Init] ⚠️ PrismaSessionStore not available");
-}
-
-console.log("[Init] Creating Express app...");
 const app = express();
-console.log("[Init] ✅ Express app created");
-
-// Inicializar Prisma con manejo de errores
-let prisma;
-let sessionStore;
-
-try {
-  // Ajustar DATABASE_URL para serverless: aumentar timeouts
-  let databaseUrl = process.env.DATABASE_URL;
-  if (isProduction && databaseUrl) {
-    try {
-      // Asegurar que los timeouts estén configurados para serverless
-      const urlObj = new URL(databaseUrl);
-      urlObj.searchParams.set('connect_timeout', '30');
-      urlObj.searchParams.set('pool_timeout', '30');
-      urlObj.searchParams.set('statement_cache_size', '0'); // Desactivar cache para serverless
-      databaseUrl = urlObj.toString();
-      console.log("[Prisma] ✅ DATABASE_URL adjusted for serverless");
-    } catch (urlError) {
-      console.warn("[Prisma] ⚠️ Could not parse DATABASE_URL, using original:", urlError.message);
-      // Si hay error parseando la URL, usar la original
-      databaseUrl = process.env.DATABASE_URL;
-    }
-  }
-  
-  if (!databaseUrl) {
-    console.error("[Prisma] ❌ DATABASE_URL is not set!");
-    throw new Error("DATABASE_URL environment variable is required");
-  }
-  
-  prisma = new PrismaClient({
-    log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
-    datasources: {
-      db: {
-        url: databaseUrl,
-      },
-    },
-  });
-  console.log("[Prisma] ✅ PrismaClient initialized");
-  
-  // Intentar crear la tabla Session si no existe (crítico para sesiones en producción)
-  // Ejecutar de forma asíncrona sin bloquear el inicio del servidor
-  process.nextTick(async () => {
-    try {
-      // Verificar si la tabla existe intentando hacer una query
-      await prisma.$queryRaw`SELECT 1 FROM "Session" LIMIT 1`;
-      console.log("[Session Table] ✅ Session table exists");
-    } catch (error) {
-      if (error.code === 'P2021' || error.message?.includes('does not exist') || (error.message?.includes('relation') && error.message?.includes('does not exist'))) {
-        console.log("[Session Table] ⚠️ Session table does not exist, creating it...");
-        try {
-          await prisma.$executeRawUnsafe(`
-            CREATE TABLE IF NOT EXISTS "Session" (
-                "id" TEXT NOT NULL,
-                "data" TEXT NOT NULL,
-                "expiresAt" TIMESTAMP(3) NOT NULL,
-                "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
-            );
-          `);
-          await prisma.$executeRawUnsafe(`
-            CREATE INDEX IF NOT EXISTS "Session_expiresAt_idx" ON "Session"("expiresAt");
-          `);
-          console.log("[Session Table] ✅ Session table created successfully!");
-        } catch (createError) {
-          console.error("[Session Table] ❌ Failed to create Session table:", createError.message);
-          console.error("[Session Table] Error code:", createError.code);
-          console.error("[Session Table] Sessions will not persist. Please create the table manually.");
-        }
-      } else {
-        console.error("[Session Table] ⚠️ Error checking Session table:", error.message);
-        console.error("[Session Table] Error code:", error.code);
-      }
-    }
-  });
-  
-  // Inicializar session store: Redis (preferido) o Prisma (fallback)
-  // Redis es ideal para serverless porque persiste entre invocaciones
-  
-  // Construir Redis URL desde variables de entorno de Upstash si están disponibles
-  let redisUrl = process.env.REDIS_URL;
-  if (!redisUrl && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    // Construir Redis URL desde REST URL y TOKEN de Upstash
-    const restUrl = process.env.UPSTASH_REDIS_REST_URL.replace('https://', '').replace('http://', '').replace(/\/$/, '');
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-    // Upstash puede usar puerto 6379 o 6380, intentar 6379 primero
-    const port = process.env.UPSTASH_REDIS_PORT || '6379';
-    redisUrl = `redis://default:${encodeURIComponent(token)}@${restUrl}:${port}`;
-    console.log("[Session Store] ✅ Constructed Redis URL from UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN");
-    console.log("[Session Store] Redis URL host:", restUrl);
-    console.log("[Session Store] Redis URL port:", port);
-  }
-  
-  if (RedisStore && redisUrl) {
-    try {
-      console.log("[Session Store] Attempting to initialize Redis store...");
-      console.log("[Session Store] Redis URL constructed (first 50 chars):", redisUrl.substring(0, 50) + "...");
-      const redisClient = require("redis");
-      redis = redisClient.createClient({ 
-        url: redisUrl,
-        socket: {
-          reconnectStrategy: (retries) => {
-            if (retries > 10) {
-              console.error("[Session Store] ❌ Max reconnection attempts reached");
-              return new Error("Max reconnection attempts reached");
-            }
-            return Math.min(retries * 100, 3000);
-          }
-        }
-      });
-      
-      redis.on('error', (err) => {
-        console.error("[Session Store] ❌ Redis client error:", err.message);
-      });
-      
-      redis.on('connect', () => {
-        console.log("[Session Store] ✅ Redis client connected");
-      });
-      
-      redis.on('ready', () => {
-        console.log("[Session Store] ✅ Redis client ready");
-      });
-      
-      // Conectar Redis (no bloqueante, async)
-      redis.connect().then(() => {
-        console.log("[Session Store] ✅ Redis connection established");
-      }).catch((err) => {
-        console.error("[Session Store] ⚠️ Redis connection failed:", err.message);
-        console.error("[Session Store] Error details:", {
-          code: err.code,
-          message: err.message
-        });
-        console.log("[Session Store] Will try PrismaSessionStore as fallback");
-        sessionStore = undefined;
-        redis = undefined;
-      });
-      
-      // Crear RedisStore - la API puede variar según la versión
-      // El store puede funcionar incluso si la conexión aún no está lista
-      try {
-        sessionStore = new RedisStore({ 
-          client: redis,
-          prefix: "sess:",
-        });
-        console.log("[Session Store] ✅ Redis store created (connection may still be establishing)");
-      } catch (storeError) {
-        // Intentar con la API antigua de connect-redis
-        try {
-          sessionStore = new RedisStore(session, { 
-            client: redis,
-            prefix: "sess:",
-          });
-          console.log("[Session Store] ✅ Redis store created with legacy API");
-        } catch (legacyError) {
-          console.error("[Session Store] ❌ Failed to create RedisStore:", legacyError.message);
-          throw legacyError;
-        }
-      }
-    } catch (error) {
-      console.error("[Session Store] ⚠️ Error initializing Redis store:", error.message);
-      console.error("[Session Store] Error stack:", error.stack);
-      console.log("[Session Store] Will try PrismaSessionStore as fallback");
-      sessionStore = undefined;
-      redis = undefined;
-    }
-  }
-  
-  // Fallback a PrismaSessionStore si Redis no está disponible
-  if (!sessionStore && PrismaSessionStore && prisma) {
-    try {
-      sessionStore = new PrismaSessionStore(prisma);
-      console.log("[Session Store] ✅ PrismaSessionStore initialized as fallback");
-    } catch (error) {
-      console.error("[Session Store] ⚠️ Error initializing PrismaSessionStore:", error.message);
-      console.error("[Session Store] Will use memory store as fallback");
-      sessionStore = undefined;
-    }
-  }
-  
-  if (!sessionStore) {
-    console.log("[Session Store] ⚠️ No persistent store available, using memory store");
-    console.log("[Session Store] ⚠️ WARNING: Sessions will not persist between serverless invocations!");
-    sessionStore = undefined;
-  }
-} catch (error) {
-  console.error("[Prisma] ❌ Error initializing PrismaClient:", error);
-  console.error("[Prisma] Error message:", error.message);
-  console.error("[Prisma] Error code:", error.code);
-  console.error("[Prisma] DATABASE_URL present:", !!process.env.DATABASE_URL);
-  console.error("[Prisma] Stack:", error.stack);
-  // Intentar inicializar Prisma sin modificar la URL si falló
-  try {
-    console.log("[Prisma] ⚠️ Retrying with original DATABASE_URL...");
-    prisma = new PrismaClient({
-      log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
-    });
-    console.log("[Prisma] ✅ PrismaClient initialized with fallback");
-  } catch (fallbackError) {
-    console.error("[Prisma] ❌ Fallback initialization also failed:", fallbackError.message);
-    // No lanzar el error aquí, dejar que el servidor intente iniciar
-    // Prisma se inicializará cuando se necesite
-    prisma = null;
-    sessionStore = undefined;
-  }
-}
+const prisma = new PrismaClient();
 
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
 // We keep a DB mirror so sites can reference a profile via FK, but disk remains the source of truth.
-// Ejecutar de forma asíncrona sin bloquear el inicio del servidor
-// Usar process.nextTick para asegurar que se ejecute después de que el módulo esté completamente cargado
-process.nextTick(() => {
-  if (prisma) {
-    syncProfilesToDb(prisma)
-      .then((count) => {
-        console.log(`[Profiles] ✅ Synced ${count} frontend profile(s) from disk`);
-      })
-      .catch((err) => {
-        console.warn(
-          "[Profiles] ⚠️ Failed to sync profiles from disk (server will continue):",
-          err?.message || err
-        );
-      });
-  }
-});
+syncProfilesToDb(prisma)
+  .then((count) => {
+    console.log(`[Profiles] ✅ Synced ${count} frontend profile(s) from disk`);
+  })
+  .catch((err) => {
+    console.warn(
+      "[Profiles] ⚠️ Failed to sync profiles from disk (server will continue):",
+      err?.message || err
+    );
+  });
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
+  : true; // En desarrollo, permitir cualquier origen
 
-// CORS: En producción, evitar wildcard cuando credentials: true
-// Usar función dinámica para permitir subdominios de Vercel
-let corsOptions;
+// Log para debugging en producción
 if (isProduction) {
-  if (process.env.ALLOWED_ORIGINS) {
-    const allowedOriginsList = process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim());
-    corsOptions = {
-      origin: allowedOriginsList,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-      exposedHeaders: ['Set-Cookie'],
-    };
-    console.log("[Init] CORS allowed origins (explicit):", allowedOriginsList);
-  } else {
-    // En Vercel, permitir todos los subdominios de vercel.app dinámicamente
-    corsOptions = {
-      origin: (origin, callback) => {
-        // Permitir requests sin origin (ej: Postman, curl, server-to-server)
-        if (!origin) {
-          console.log("[CORS] Request without origin, allowing");
-          return callback(null, true);
-        }
-        console.log("[CORS] Checking origin:", origin);
-        // Permitir cualquier subdominio de vercel.app o localhost
-        if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-          console.log("[CORS] Origin allowed:", origin);
-          return callback(null, true);
-        }
-        console.log("[CORS] Origin blocked:", origin);
-        callback(new Error('Not allowed by CORS'));
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-      exposedHeaders: ['Set-Cookie'],
-    };
-    console.log("[Init] CORS configured with dynamic origin function (Vercel)");
-  }
-} else {
-  corsOptions = {
-    origin: true, // En desarrollo, permitir cualquier origen
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Set-Cookie'],
-  };
-  console.log("[Init] CORS configured for development (all origins)");
+  console.log("[CORS] ALLOWED_ORIGINS:", allowedOrigins);
 }
+
+// JWT Secret - usar SESSION_SECRET si está disponible, o generar uno por defecto
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || (isProduction ? null : "default-dev-jwt-secret-change-in-production");
 
 // Validar que SESSION_SECRET esté configurado en producción
 if (isProduction && !process.env.SESSION_SECRET) {
   console.error(
     "ERROR: SESSION_SECRET must be set in production. Add it to your .env file."
   );
-  console.error("WARNING: Server will continue but sessions may not work correctly.");
-  // NO hacer process.exit(1) en Vercel, solo loguear el error
+  process.exit(1);
+}
+
+// Validar JWT_SECRET en producción
+if (isProduction && !JWT_SECRET) {
+  console.error(
+    "ERROR: JWT_SECRET or SESSION_SECRET must be set in production. Add it to your .env file."
+  );
+  process.exit(1);
 }
 
 // Configurar CORS con credenciales para sesiones
-console.log("[Init] Setting up CORS and body parsers...");
-try {
-  // Aplicar CORS middleware
-  app.use(cors(corsOptions));
-  
-  // Manejar preflight requests explícitamente
-  // El middleware de CORS debería manejar esto, pero lo reforzamos para asegurar que funcione
-  app.use((req, res, next) => {
-    if (req.method === 'OPTIONS') {
-      // Aplicar CORS manualmente para preflight
-      const origin = req.headers.origin;
-      if (origin && (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
-      }
-      return res.status(204).end();
-    }
-    next();
-  });
-  
-  console.log("[Init] ✅ CORS configured with credentials support");
-  
-  // Aumentar límite del body parser para permitir imágenes base64 grandes
-  app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
-  console.log("[Init] ✅ Body parsers configured");
-} catch (error) {
-  console.error("[Init] ❌ Error setting up CORS/body parsers:", error.message);
-  console.error("[Init] Error stack:", error.stack);
-  // Continuar sin estos middlewares si fallan
-}
+const corsOptions = {
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
+  exposedHeaders: ['Set-Cookie'],
+};
+
+app.use(cors(corsOptions));
+
+// Handler explícito para peticiones OPTIONS (preflight)
+app.options('*', cors(corsOptions));
+// Aumentar límite del body parser para permitir imágenes base64 grandes
+app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // IMPORTANTE: express-session DEBE estar ANTES de Passport
 // Configurar sesiones
-console.log("[Init] Setting up session middleware...");
-const sessionSecret = process.env.SESSION_SECRET || (() => {
-  if (isProduction) {
-    console.error(
-      "ERROR: SESSION_SECRET must be set in production. Add it to your .env file."
-    );
-    console.error("WARNING: Using a default secret (NOT SECURE). Sessions may not work correctly.");
-    // NO hacer process.exit(1) en Vercel, usar un valor por defecto
-    return "default-production-secret-CHANGE-THIS";
-  }
-  // Solo en desarrollo, usar un valor por defecto (NO SEGURO)
-  console.warn(
-    "⚠️  WARNING: Using default SESSION_SECRET. Set SESSION_SECRET in .env for production!"
-  );
-  return "default-dev-secret-change-in-production";
-})();
-
-// Aplicar middleware de sesión SIEMPRE (no dentro de try-catch para asegurar que se aplique)
 app.use(
   session({
-    secret: sessionSecret,
-    store: sessionStore || undefined, // Usar Prisma para almacenamiento persistente (fallback a memoria si falla)
+    secret:
+      process.env.SESSION_SECRET ||
+      (() => {
+        if (isProduction) {
+          console.error(
+            "ERROR: SESSION_SECRET must be set in production. Add it to your .env file."
+          );
+          process.exit(1);
+        }
+        // Solo en desarrollo, usar un valor por defecto (NO SEGURO)
+        console.warn(
+          "⚠️  WARNING: Using default SESSION_SECRET. Set SESSION_SECRET in .env for production!"
+        );
+        return "default-dev-secret-change-in-production";
+      })(),
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProduction, // true en producción (requiere HTTPS) - siempre true en Vercel
+      secure: isProduction ? process.env.COOKIE_SECURE !== "false" : false, // true en producción (requiere HTTPS)
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
-      // sameSite: "none" es necesario cuando frontend y backend están en diferentes dominios
-      // Requiere secure: true (que ya está configurado en producción)
-      sameSite: isProduction ? "none" : "lax", // "none" para cross-site, "lax" para mismo dominio
-      // NO establecer domain explícitamente - algunos navegadores rechazan cookies con domain cuando sameSite=none
-      domain: undefined, // undefined = dominio actual (funciona mejor con sameSite=none)
-      path: "/", // Asegurar que la cookie se aplica a todas las rutas
+      sameSite: isProduction ? "strict" : "lax", // Protección CSRF en producción
     },
-    name: 'connect.sid', // Nombre explícito de la cookie de sesión
-    // Asegurar que la cookie se envía en todas las respuestas
-    rolling: true, // Renovar la cookie en cada request
   })
 );
-console.log("[Init] ✅ Session middleware configured");
 
 // Inicializar Passport (DESPUÉS de express-session)
-console.log("[Init] Setting up Passport...");
-try {
-  app.use(passport.initialize());
-  app.use(passport.session());
-  console.log("[Init] ✅ Passport configured");
-} catch (error) {
-  console.error("[Init] ❌ Error setting up Passport:", error.message);
-  console.error("[Init] Error stack:", error.stack);
-}
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Configurar Passport para serializar/deserializar usuarios
 passport.serializeUser((user, done) => {
@@ -474,6 +127,55 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
+// Configurar Google OAuth Strategy (solo si está configurado)
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: process.env.GOOGLE_CALLBACK_URL || "http://localhost:3000/auth/google/callback",
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        try {
+          // Buscar usuario existente por googleId o email
+          let user = await prisma.user.findFirst({
+            where: {
+              OR: [
+                { googleId: profile.id },
+                { email: profile.emails[0].value },
+              ],
+            },
+          });
+
+          if (user) {
+            // Si el usuario existe pero no tiene googleId, actualizarlo
+            if (!user.googleId) {
+              user = await prisma.user.update({
+                where: { id: user.id },
+                data: { googleId: profile.id, emailVerified: true },
+              });
+            }
+          } else {
+            // Crear nuevo usuario
+            user = await prisma.user.create({
+              data: {
+                email: profile.emails[0].value,
+                googleId: profile.id,
+                emailVerified: true, // Google ya verifica el email
+                password: null, // No hay contraseña para usuarios OAuth
+              },
+            });
+          }
+
+          return done(null, user);
+        } catch (error) {
+          return done(error, null);
+        }
+      }
+    )
+  );
+}
 
 // ==================== CACHE DE CONTENIDO ====================
 // Cache simple en memoria (en producción, usar Redis)
@@ -573,14 +275,20 @@ function auditMiddleware(action, getResource = null, getResourceId = null, getDe
 
 // ==================== RATE LIMITING ====================
 // Helper para obtener IP real desde headers (soporta Vercel/proxies)
+// Usar el helper de express-rate-limit para manejar IPv6 correctamente
+const { ipKeyGenerator } = require('express-rate-limit');
+
 function getRealIP(req) {
   // En Vercel, usar x-forwarded-for o x-vercel-forwarded-for
   const forwarded = req.headers['x-forwarded-for'] || req.headers['x-vercel-forwarded-for'];
   if (forwarded) {
     // x-forwarded-for puede contener múltiples IPs, tomar la primera
-    return forwarded.split(',')[0].trim();
+    const ip = forwarded.split(',')[0].trim();
+    // Usar el helper de express-rate-limit para normalizar IPv6
+    return ipKeyGenerator(req, ip);
   }
-  return req.ip || req.connection.remoteAddress || 'unknown';
+  // Usar el helper para normalizar req.ip
+  return ipKeyGenerator(req, req.ip || req.connection?.remoteAddress || 'unknown');
 }
 
 // Rate limiting para endpoints públicos (más permisivo)
@@ -612,47 +320,6 @@ const adminRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getRealIP,
-});
-
-const path = require("path");
-
-// Health check endpoint (sin dependencias de Prisma)
-app.get("/health", (req, res) => {
-  res.json({ 
-    status: "ok", 
-    timestamp: new Date().toISOString(),
-    prisma: prisma ? "initialized" : "not initialized"
-  });
-});
-
-// Serve admin HTML files
-app.get("/admin", (req, res) => {
-  try {
-    res.sendFile(path.join(__dirname, "../admin/admin.html"));
-  } catch (error) {
-    console.error("[Admin] Error serving admin.html:", error);
-    res.status(500).send("Error loading admin panel");
-  }
-});
-
-app.get("/admin.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "../admin/admin.html"));
-});
-
-app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "../admin/login.html"));
-});
-
-app.get("/login.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "../admin/login.html"));
-});
-
-// Serve admin static assets
-app.use("/admin", express.static(path.join(__dirname, "../admin")));
-
-// Root route - redirect to admin panel
-app.get("/", (req, res) => {
-  res.redirect("/admin");
 });
 
 app.get("/api/pages", (req, res) => {
@@ -981,53 +648,49 @@ async function resolveSiteFromDomain(req, res, next) {
   }
 }
 
-// Middleware de autenticación
-// Middleware de autenticación (usa JWT o sesión como fallback)
-function requireAuth(req, res, next) {
-  // Intentar obtener userId de JWT primero
-  let userId = req.userId; // De verifyJWT middleware si fue llamado antes
+// Helper para obtener userId desde sesión o JWT
+function getUserId(req) {
+  // Primero intentar con sesión
+  if (req.session && req.session.userId) {
+    return req.session.userId;
+  }
   
-  // Si no hay JWT, intentar verificar JWT del header (SIEMPRE verificar primero)
+  // Si no hay sesión, intentar con JWT
   const authHeader = req.headers.authorization;
-  if (!userId && authHeader && authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      userId = decoded.userId;
-      req.userId = userId;
-      req.userEmail = decoded.email;
-      req.isAdmin = decoded.isAdmin || false;
-    } catch (jwtError) {
-      // JWT inválido, continuar con fallback a sesión
+      return decoded.userId;
+    } catch (err) {
+      return null;
     }
   }
   
-  // Fallback a sesión si no hay JWT
-  if (!userId && req.session && req.session.userId) {
-    userId = req.session.userId;
-    req.userId = userId;
-    req.userEmail = req.session.userEmail;
-    req.isAdmin = req.session.isAdmin || false;
-  }
-  
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized. Please login." });
-  }
-  
-  return next();
+  return null;
 }
 
-// Middleware de autenticación por sitio (usa JWT o sesión)
-async function requireSiteAuth(req, res, next) {
-  // Obtener userId de JWT o sesión
-  let userId = req.userId; // De verifyJWT middleware
+// Middleware de autenticación - soporta sesión y JWT
+async function requireAuth(req, res, next) {
+  const userId = getUserId(req);
   
-  // Fallback a sesión si no hay JWT
-  if (!userId && req.session && req.session.userId) {
-    userId = req.session.userId;
+  if (userId) {
+    // Asegurar que req.session.userId esté establecido para compatibilidad
+    if (!req.session) {
+      req.session = {};
+    }
+    req.session.userId = userId;
+    req.userId = userId;
+    return next();
   }
-  
-  if (!userId) {
+
+  console.log("[requireAuth] ❌ No userId found, returning 401");
+  return res.status(401).json({ error: "Unauthorized. Please login." });
+}
+
+// Middleware de autenticación por sitio
+async function requireSiteAuth(req, res, next) {
+  if (!req.session || !req.session.userId) {
     return res.status(401).json({ error: "Unauthorized. Please login." });
   }
 
@@ -1041,7 +704,7 @@ async function requireSiteAuth(req, res, next) {
   const userSite = await prisma.userSite.findUnique({
     where: {
       userId_siteId: {
-        userId: userId,
+        userId: req.session.userId,
         siteId: parseInt(siteId),
       },
     },
@@ -1057,52 +720,6 @@ async function requireSiteAuth(req, res, next) {
 }
 
 // ==================== AUTENTICACIÓN ====================
-
-// Configuración JWT
-const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || "default-jwt-secret-change-in-production";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "24h";
-
-// Middleware para verificar JWT
-function verifyJWT(req, res, next) {
-  // Intentar obtener token del header Authorization
-  const authHeader = req.headers.authorization;
-  let token = null;
-  
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
-  } else if (req.headers['x-auth-token']) {
-    token = req.headers['x-auth-token'];
-  } else if (req.query.token) {
-    token = req.query.token;
-  }
-  
-  if (!token) {
-    // Si no hay token, intentar usar sesión como fallback
-    if (req.session && req.session.userId) {
-      req.userId = req.session.userId;
-      req.userEmail = req.session.userEmail;
-      req.isAdmin = req.session.isAdmin;
-      return next();
-    }
-    return res.status(401).json({ error: "No token provided" });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.userId = decoded.userId;
-    req.userEmail = decoded.email;
-    req.isAdmin = decoded.isAdmin || false;
-    next();
-  } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: "Token expired" });
-    }
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ error: "Invalid token" });
-    }
-    return res.status(401).json({ error: "Token verification failed" });
-  }
-}
 
 // POST /auth/register - Registrar nuevo usuario
 app.post("/auth/register", authRateLimiter, async (req, res) => {
@@ -1180,42 +797,7 @@ app.post("/auth/register", authRateLimiter, async (req, res) => {
 
 // POST /auth/login - Iniciar sesión
 app.post("/auth/login", async (req, res) => {
-  // Asegurar que siempre devolvemos JSON
-  res.setHeader('Content-Type', 'application/json');
-  
   try {
-    // Verificar que Prisma esté inicializado
-    if (!prisma) {
-      console.error("[Login] ❌ Prisma not initialized");
-      console.error("[Login] DATABASE_URL:", process.env.DATABASE_URL ? "Set" : "NOT SET");
-      // Intentar inicializar Prisma si no está inicializado
-      try {
-        console.log("[Login] ⚠️ Attempting to initialize Prisma...");
-        prisma = new PrismaClient({
-          log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
-        });
-        await prisma.$connect();
-        console.log("[Login] ✅ Prisma initialized successfully");
-      } catch (initError) {
-        console.error("[Login] ❌ Failed to initialize Prisma:", initError.message);
-        return res.status(500).json({ 
-          error: "Database connection not available",
-          message: "Failed to initialize database connection. Please check server logs."
-        });
-      }
-    }
-    
-    // Verificar conexión a la base de datos
-    try {
-      await prisma.$connect();
-    } catch (connectError) {
-      console.error("[Login] ❌ Failed to connect to database:", connectError.message);
-      return res.status(500).json({ 
-        error: "Database connection failed",
-        message: connectError.message
-      });
-    }
-    
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -1231,10 +813,10 @@ app.post("/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // Si el usuario no tiene contraseña, no permitir login con contraseña
+    // Si el usuario no tiene contraseña (es usuario OAuth), no permitir login con contraseña
     if (!user.password) {
       return res.status(401).json({ 
-        error: "This account does not have a password set. Please contact an administrator." 
+        error: "This account uses Google sign-in. Please use the Google login option." 
       });
     }
 
@@ -1256,102 +838,22 @@ app.post("/auth/login", async (req, res) => {
     // Crear sesión
     req.session.userId = user.id;
     req.session.userEmail = user.email;
-    req.session.isAdmin = user.isAdmin || false;
-    
-    console.log("[Login] Setting session data:", {
-      userId: user.id,
-      userEmail: user.email,
-      isAdmin: user.isAdmin,
-      sessionID: req.sessionID,
-      cookie: req.session.cookie
-    });
-    
-    // Guardar sesión explícitamente antes de enviar respuesta (crítico en serverless)
-    await new Promise((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) {
-          console.error("[Login] ❌ Error saving session:", err);
-          console.error("[Login] Session save error details:", {
-            message: err.message,
-            stack: err.stack,
-            code: err.code
-          });
-          return reject(err);
-        }
-        console.log("[Login] ✅ Session saved successfully");
-        console.log("[Login] Session ID:", req.sessionID);
-        console.log("[Login] Session cookie will be set:", {
-          secure: req.session.cookie.secure,
-          sameSite: req.session.cookie.sameSite,
-          httpOnly: req.session.cookie.httpOnly,
-          maxAge: req.session.cookie.maxAge
-        });
-        resolve();
-      });
-    });
-    
-    // Verificar que la sesión se guardó correctamente
-    try {
-      if (sessionStore && typeof sessionStore.get === 'function') {
-        await new Promise((resolve, reject) => {
-          sessionStore.get(req.sessionID, (err, sessionData) => {
-            if (err) {
-              console.error("[Login] ❌ Error verifying session in store:", err);
-              return reject(err);
-            }
-            if (sessionData) {
-              console.log("[Login] ✅ Session verified in store, userId:", sessionData.userId);
-            } else {
-              console.warn("[Login] ⚠️ Session not found in store after save!");
-            }
-            resolve();
-          });
-        });
-      }
-    } catch (verifyErr) {
-      console.error("[Login] ⚠️ Error verifying session (non-critical):", verifyErr);
-    }
-    
+
     // Generar JWT token
     const token = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        isAdmin: user.isAdmin || false,
-      },
+      { userId: user.id, email: user.email },
       JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      { expiresIn: '24h' }
     );
-    
-    console.log("[Login] ✅ JWT token generated");
-    
-    // También mantener sesión como fallback (opcional)
-    try {
-      req.session.userId = user.id;
-      req.session.userEmail = user.email;
-      req.session.isAdmin = user.isAdmin || false;
-      await new Promise((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) {
-            console.warn("[Login] ⚠️ Session save failed (non-critical with JWT):", err.message);
-          } else {
-            console.log("[Login] ✅ Session also saved (fallback)");
-          }
-          resolve();
-        });
-      });
-    } catch (sessionErr) {
-      console.warn("[Login] ⚠️ Session save error (non-critical with JWT):", sessionErr.message);
-    }
-    
+
+    console.log("[Login] ✅ Login response sent with JWT token");
+
     res.json({
       message: "Login successful",
-      token: token, // JWT token
-      user: { id: user.id, email: user.email, emailVerified: user.emailVerified, isAdmin: user.isAdmin || false },
-      expiresIn: JWT_EXPIRES_IN,
+      token: token,
+      user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
+      expiresIn: '24h',
     });
-    
-    console.log("[Login] ✅ Login response sent with JWT token");
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login" });
@@ -1373,57 +875,43 @@ app.post("/auth/logout", async (req, res) => {
   });
 });
 
-// GET /auth/me - Obtener usuario actual (usa JWT o sesión como fallback)
+// GET /auth/me - Obtener usuario actual (soporta sesión y JWT)
 app.get("/auth/me", async (req, res) => {
-  console.log("[GET /auth/me] Checking authentication...");
-  
-  let userId = null;
-  let userEmail = null;
-  let isAdmin = false;
-  
-  // Intentar obtener usuario desde JWT primero
+  // Intentar con sesión primero
+  if (req.session && req.session.userId) {
+    const user = await prisma.user.findUnique({
+      where: { id: req.session.userId },
+      select: { id: true, email: true, isAdmin: true, emailVerified: true },
+    });
+    
+    if (user) {
+      console.log("[GET /auth/me] ✅ User found: " + user.email);
+      return res.json({
+        authenticated: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          isAdmin: user.isAdmin,
+          emailVerified: user.emailVerified,
+        },
+      });
+    }
+  }
+
+  // Si no hay sesión, intentar con JWT
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
+    
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      userId = decoded.userId;
-      userEmail = decoded.email;
-      isAdmin = decoded.isAdmin || false;
-      console.log("[GET /auth/me] ✅ Authenticated via JWT, userId:", userId);
-    } catch (jwtError) {
-      if (jwtError.name === 'TokenExpiredError') {
-        console.log("[GET /auth/me] ⚠️ JWT token expired");
-      } else if (jwtError.name === 'JsonWebTokenError') {
-        console.log("[GET /auth/me] ⚠️ Invalid JWT token");
-      } else {
-        console.log("[GET /auth/me] ⚠️ JWT verification error:", jwtError.message);
-      }
-    }
-  }
-  
-  // Fallback a sesión si JWT no está disponible
-  if (!userId && req.session && req.session.userId) {
-    userId = req.session.userId;
-    userEmail = req.session.userEmail;
-    isAdmin = req.session.isAdmin || false;
-    console.log("[GET /auth/me] ✅ Authenticated via session (fallback), userId:", userId);
-  }
-  
-  // Si tenemos userId, buscar usuario en la base de datos
-  if (userId) {
-    try {
-      if (!prisma) {
-        return res.status(500).json({ error: "Database connection not available" });
-      }
-      
       const user = await prisma.user.findUnique({
-        where: { id: userId },
+        where: { id: decoded.userId },
         select: { id: true, email: true, isAdmin: true, emailVerified: true },
       });
       
       if (user) {
-        console.log("[GET /auth/me] ✅ User found:", user.email);
+        console.log("[GET /auth/me] ✅ User found: " + user.email);
         return res.json({
           authenticated: true,
           user: {
@@ -1433,17 +921,15 @@ app.get("/auth/me", async (req, res) => {
             emailVerified: user.emailVerified,
           },
         });
-      } else {
-        console.log("[GET /auth/me] ⚠️ User not found in database for userId:", userId);
       }
     } catch (err) {
-      console.error("[GET /auth/me] ❌ Error fetching user:", err);
-      return res.status(500).json({ error: "Error fetching user" });
+      // Token inválido o expirado
+      console.log("[GET /auth/me] ⚠️ Not authenticated");
     }
   }
-  
+
   console.log("[GET /auth/me] ⚠️ Not authenticated");
-  return res.json({ authenticated: false });
+  res.json({ authenticated: false });
 });
 
 // GET /auth/verify-email - Verificar email con token
@@ -1691,6 +1177,31 @@ app.post("/auth/reset-password", async (req, res) => {
   }
 });
 
+// Google OAuth Routes
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  // GET /auth/google - Iniciar login con Google
+  app.get(
+    "/auth/google",
+    passport.authenticate("google", {
+      scope: ["profile", "email"],
+    })
+  );
+
+  // GET /auth/google/callback - Callback de Google OAuth
+  app.get(
+    "/auth/google/callback",
+    passport.authenticate("google", { failureRedirect: "/login?error=google_auth_failed" }),
+    (req, res) => {
+      // Crear sesión
+      req.session.userId = req.user.id;
+      req.session.userEmail = req.user.email;
+      
+      // Redirigir al frontend
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:8000";
+      res.redirect(`${frontendUrl}/admin.html`);
+    }
+  );
+}
 
 // GET /auth/verify - Verificar si un email está registrado (solo para desarrollo, requiere auth)
 app.get("/auth/verify/:email", requireAuth, async (req, res) => {
@@ -1860,12 +1371,11 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
 });
 
 // GET /posts/all - Todos los posts (incluyendo borradores) - Para admin con búsqueda, filtrado y paginación
-app.get("/posts/all", adminRateLimiter, requireAuth, resolveSiteFromDomain, async (req, res) => {
+app.get("/posts/all", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (req, res) => {
   try {
     console.log("[GET /posts/all] ========== INICIO ==========");
     console.log("[GET /posts/all] Query params:", req.query);
-    console.log("[GET /posts/all] req.userId:", req.userId);
-    console.log("[GET /posts/all] req.isAdmin:", req.isAdmin);
+    console.log("[GET /posts/all] Session userId:", req.session?.userId);
     console.log("[GET /posts/all] req.siteId:", req.siteId);
     
     const page = parseInt(req.query.page) || 1;
@@ -1885,22 +1395,26 @@ app.get("/posts/all", adminRateLimiter, requireAuth, resolveSiteFromDomain, asyn
       return res.status(500).json({ error: "Site ID not resolved. Please check server configuration." });
     }
     
-    const userId = req.userId; // Usar req.userId (de JWT o sesión)
-    const isAdmin = req.isAdmin || false; // Usar req.isAdmin (de JWT o sesión)
+    const userId = getUserId(req);
     
     if (!userId) {
       console.error("[GET /posts/all] ERROR: User not authenticated");
       return res.status(401).json({ error: "Unauthorized. Please login." });
     }
-    
-    console.log("[GET /posts/all] User found:", { id: userId, isAdmin: isAdmin });
 
     // Verificar que el usuario tenga acceso al sitio (o sea admin)
-    if (!isAdmin) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { isAdmin: true },
+    });
+    
+    console.log("[GET /posts/all] User found:", { id: userId, isAdmin: user?.isAdmin });
+
+    if (!user || !user.isAdmin) {
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -4079,29 +3593,13 @@ app.delete("/sections/:id", adminRateLimiter, requireAuth, async (req, res) => {
 // GET /sites - Obtener todos los sitios a los que el usuario tiene acceso
 app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
   try {
-    console.log("[GET /sites] ========== START ==========");
-    const userId = req.userId; // Usar req.userId (de JWT o sesión)
-    const isAdmin = req.isAdmin || false; // Usar req.isAdmin (de JWT o sesión)
-    
-    console.log("[GET /sites] userId:", userId, "isAdmin:", isAdmin);
-    console.log("[GET /sites] req.userId:", req.userId, "req.isAdmin:", req.isAdmin);
-    console.log("[GET /sites] req.session:", req.session ? { userId: req.session.userId, isAdmin: req.session.isAdmin } : "no session");
-
-    if (!userId) {
-      console.error("[GET /sites] ERROR: User ID not found");
-      return res.status(401).json({ error: "User ID not found" });
-    }
-
-    // Asegurar que userId es un número entero
-    const userIdInt = parseInt(userId);
-    if (isNaN(userIdInt)) {
-      console.error("[GET /sites] ERROR: Invalid userId type:", typeof userId, userId);
-      return res.status(400).json({ error: "Invalid user ID" });
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.session.userId },
+      select: { isAdmin: true },
+    });
 
     let sites;
-    if (isAdmin) {
-      console.log("[GET /sites] Fetching all sites (admin)");
+    if (user && user.isAdmin) {
       // Si es admin, devolver todos los sitios
       sites = await prisma.site.findMany({
         include: {
@@ -4112,12 +3610,10 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
         },
         orderBy: { createdAt: "asc" },
       });
-      console.log("[GET /sites] Found", sites.length, "sites (admin)");
     } else {
-      console.log("[GET /sites] Fetching user sites for userId:", userIdInt);
       // Si no es admin, solo sus sitios
       const userSites = await prisma.userSite.findMany({
-        where: { userId: userIdInt },
+        where: { userId: req.session.userId },
         include: {
           site: {
             include: {
@@ -4130,15 +3626,11 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
         },
       });
       sites = userSites.map(us => us.site);
-      console.log("[GET /sites] Found", sites.length, "sites for user");
     }
 
-    console.log("[GET /sites] ========== SUCCESS ==========");
     res.json(sites);
   } catch (err) {
-    console.error("[GET /sites] ========== ERROR ==========");
-    console.error("[GET /sites] ERROR:", err);
-    console.error("[GET /sites] Error stack:", err.stack);
+    console.error(err);
     res.status(500).json({ error: "Failed to fetch sites" });
   }
 });
@@ -4491,20 +3983,16 @@ app.get("/frontend-profiles/:id", adminRateLimiter, requireAuth, async (req, res
 // GET /sites/:id/frontend-profile - Obtener el profile de un site y sus schemas disponibles
 app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req, res) => {
   try {
-    console.log("[GET /sites/:id/frontend-profile] ========== START ==========");
     const siteId = parseInt(req.params.id);
-    const userId = req.userId; // Usar req.userId (de JWT o sesión)
-    const isAdmin = req.isAdmin || false; // Usar req.isAdmin (de JWT o sesión)
-    
-    console.log("[GET /sites/:id/frontend-profile] siteId:", siteId, "userId:", userId, "isAdmin:", isAdmin);
-
-    if (!userId) {
-      console.error("[GET /sites/:id/frontend-profile] ERROR: User ID not found");
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
+    const userId = req.session.userId;
 
     // Verificar permisos
-    if (!isAdmin) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { isAdmin: true },
+    });
+
+    if (!user || !user.isAdmin) {
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
@@ -4519,7 +4007,6 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
       }
     }
 
-    console.log("[GET /sites/:id/frontend-profile] Fetching site from database...");
     const site = await prisma.site.findUnique({
       where: { id: siteId },
       include: {
@@ -4528,14 +4015,10 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
     });
 
     if (!site) {
-      console.error("[GET /sites/:id/frontend-profile] ERROR: Site not found with id:", siteId);
       return res.status(404).json({ error: "Site not found" });
     }
 
-    console.log("[GET /sites/:id/frontend-profile] Site found:", site.name, "FrontendProfile:", site.frontendProfile?.name || "null");
-
     if (!site.frontendProfile) {
-      console.log("[GET /sites/:id/frontend-profile] No frontend profile assigned, returning free mode");
       return res.json({
         siteId: site.id,
         siteName: site.name,
@@ -4546,16 +4029,12 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
     }
 
     // Source of truth: disk profiles. DB is just for assignment.
-    console.log("[GET /sites/:id/frontend-profile] Looking for profile on disk:", site.frontendProfile.name);
     const diskProfile = getProfileByName(site.frontendProfile.name);
     if (!diskProfile) {
-      console.error("[GET /sites/:id/frontend-profile] ERROR: Profile not found on disk:", site.frontendProfile.name);
       return res.status(500).json({
         error: `Frontend profile "${site.frontendProfile.name}" is assigned to this site but not found on disk (backend/profiles).`,
       });
     }
-    
-    console.log("[GET /sites/:id/frontend-profile] Profile found on disk:", diskProfile.name);
 
     // Extraer los schemas disponibles
     const sectionSchemas = diskProfile.sectionSchemas || {};
@@ -4567,7 +4046,6 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
       allowReorder: sectionSchemas[key].allowReorder !== false,
     }));
 
-    console.log("[GET /sites/:id/frontend-profile] Returning response with", schemasList.length, "schemas");
     res.json({
       siteId: site.id,
       siteName: site.name,
@@ -4579,41 +4057,17 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
       },
       sectionSchemas: schemasList,
     });
-    console.log("[GET /sites/:id/frontend-profile] ========== SUCCESS ==========");
   } catch (err) {
-    console.error("[GET /sites/:id/frontend-profile] ========== ERROR ==========");
     console.error("[GET /sites/:id/frontend-profile] ERROR:", err);
-    console.error("[GET /sites/:id/frontend-profile] Error stack:", err.stack);
     res.status(500).json({ error: "Failed to fetch site frontend profile" });
   }
 });
 
-// Manejo de errores global para evitar crashes
-app.use((err, req, res, next) => {
-  console.error("[Error Handler] Unhandled error:", err);
-  console.error("[Error Handler] Stack:", err.stack);
-  
-  // Asegurar que siempre devolvemos JSON, no HTML
-  if (!res.headersSent) {
-    res.setHeader('Content-Type', 'application/json');
-    res.status(500).json({ 
-      error: "Internal server error",
-      message: process.env.NODE_ENV === "production" ? "An error occurred" : err.message
-    });
-  }
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Cache TTL: ${CACHE_TTL}ms (${CACHE_TTL / 1000}s)`);
+  console.log(`Rate limiting enabled for public, auth, and admin endpoints`);
 });
-
-// Export handler for Vercel serverless
-module.exports = app;
-
-// Only listen if running locally (not in Vercel)
-if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Cache TTL: ${CACHE_TTL}ms (${CACHE_TTL / 1000}s)`);
-    console.log(`Rate limiting enabled for public, auth, and admin endpoints`);
-  });
-}
 
 
