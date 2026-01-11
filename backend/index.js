@@ -33,7 +33,7 @@ syncProfilesToDb(prisma)
 const isProduction = process.env.NODE_ENV === "production";
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-  : true; // En desarrollo, permitir cualquier origen
+  : []; // En desarrollo, se permitirá cualquier origen mediante la función
 
 // Log para debugging en producción
 if (isProduction) {
@@ -59,19 +59,31 @@ if (isProduction && !JWT_SECRET) {
   process.exit(1);
 }
 
-// Configurar CORS con credenciales para sesiones
+// Configurar CORS con función dinámica para origin (robusto en Vercel serverless)
 const corsOptions = {
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Permitir requests sin origin (SSR, curl, Postman, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+    // En desarrollo, permitir cualquier origen
+    if (!isProduction || allowedOrigins.length === 0) {
+      return callback(null, true);
+    }
+    // En producción, verificar que el origin esté en la lista permitida
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    console.log("[CORS] Origin blocked:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Set-Cookie'],
 };
 
 app.use(cors(corsOptions));
-
-// Handler explícito para peticiones OPTIONS (preflight)
-app.options('*', cors(corsOptions));
 // Aumentar límite del body parser para permitir imágenes base64 grandes
 app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
