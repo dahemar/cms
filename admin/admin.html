@@ -2337,9 +2337,7 @@
       async function loadSites() {
         try {
           console.log("[Load Sites] Fetching sites from API...");
-          const res = await fetch(`${API_URL}/sites`, {
-            credentials: "include",
-          });
+          const res = await fetchWithAuth(`${API_URL}/sites`);
           console.log("[Load Sites] Response status:", res.status, res.statusText);
           
           if (res.ok) {
@@ -2413,6 +2411,29 @@
         }
       }
 
+      // Helper function to get auth headers
+      function getAuthHeaders(customHeaders = {}) {
+        const headers = { "Content-Type": "application/json", ...customHeaders };
+        const token = localStorage.getItem("jwt_token");
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+        return headers;
+      }
+
+      // Helper function to make authenticated fetch requests
+      async function fetchWithAuth(url, options = {}) {
+        const headers = getAuthHeaders(options.headers || {});
+        return fetch(url, {
+          ...options,
+          credentials: "include",
+          headers: {
+            ...headers,
+            ...(options.headers || {}),
+          },
+        });
+      }
+
       // Verificar autenticación
       async function checkAuth() {
         // Evitar múltiples redirecciones simultáneas
@@ -2423,9 +2444,15 @@
         
         try {
           console.log("[checkAuth] Checking authentication...");
-          const res = await fetch(`${API_URL}/auth/me`, {
-            credentials: "include",
-          });
+          const headers = getAuthHeaders();
+          const token = localStorage.getItem("jwt_token");
+          if (token) {
+            console.log("[checkAuth] JWT token found in localStorage");
+          } else {
+            console.log("[checkAuth] No JWT token in localStorage, using session");
+          }
+          
+          const res = await fetchWithAuth(`${API_URL}/auth/me`);
           
           console.log("[checkAuth] Response status:", res.status);
           
@@ -3860,9 +3887,7 @@
       // Cargar frontend profile del site actual
       async function loadFrontendProfile(siteId) {
         try {
-          const response = await fetch(`${API_URL}/sites/${siteId}/frontend-profile`, {
-            credentials: 'include',
-          });
+          const response = await fetchWithAuth(`${API_URL}/sites/${siteId}/frontend-profile`);
           
           if (!response.ok) {
             console.log("[Load Frontend Profile] No profile found or error:", response.status);
