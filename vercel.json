@@ -24,31 +24,59 @@
       "dest": "backend/index.js"
     },
     {
-      "src": "/sites(.*)?",
+      "src": "/sites",
       "dest": "backend/index.js"
     },
     {
-      "src": "/posts(.*)?",
+      "src": "/sites/(.*)",
       "dest": "backend/index.js"
     },
     {
-      "src": "/sections(.*)?",
+      "src": "/posts",
       "dest": "backend/index.js"
     },
     {
-      "src": "/tags(.*)?",
+      "src": "/posts/(.*)",
       "dest": "backend/index.js"
     },
     {
-      "src": "/thumbnails(.*)?",
+      "src": "/sections",
       "dest": "backend/index.js"
     },
     {
-      "src": "/frontend-profiles(.*)?",
+      "src": "/sections/(.*)",
       "dest": "backend/index.js"
     },
     {
-      "src": "/audit-logs(.*)?",
+      "src": "/tags",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/tags/(.*)",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/thumbnails",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/thumbnails/(.*)",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/frontend-profiles",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/frontend-profiles/(.*)",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/audit-logs",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/audit-logs/(.*)",
       "dest": "backend/index.js"
     },
     {
