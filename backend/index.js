@@ -495,11 +495,74 @@ const sessionSecret = process.env.SESSION_SECRET || (() => {
   return "default-dev-secret-change-in-production";
 })();
 
+function createResilientSessionStore(store) {
+  if (!store) return undefined;
+
+  const safeCall = (fn, fallbackReturn) => {
+    try {
+      return fn();
+    } catch (err) {
+      console.error("[Session Store] ⚠️ Store method threw (swallowed):", {
+        message: err?.message,
+        name: err?.name,
+        code: err?.code,
+      });
+      return fallbackReturn;
+    }
+  };
+
+  const wrapped = Object.create(store);
+
+  if (typeof store.get === 'function') {
+    wrapped.get = (sid, cb) => safeCall(() => store.get(sid, (err, sess) => {
+      if (err) {
+        console.error("[Session Store] ⚠️ get() failed (swallowed):", err?.message || err);
+        return cb?.(null, null);
+      }
+      return cb?.(null, sess);
+    }), undefined);
+  }
+
+  if (typeof store.set === 'function') {
+    wrapped.set = (sid, sess, cb) => safeCall(() => store.set(sid, sess, (err) => {
+      if (err) {
+        console.error("[Session Store] ⚠️ set() failed (swallowed):", err?.message || err);
+        return cb?.(null);
+      }
+      return cb?.(null);
+    }), undefined);
+  }
+
+  if (typeof store.destroy === 'function') {
+    wrapped.destroy = (sid, cb) => safeCall(() => store.destroy(sid, (err) => {
+      if (err) {
+        console.error("[Session Store] ⚠️ destroy() failed (swallowed):", err?.message || err);
+        return cb?.(null);
+      }
+      return cb?.(null);
+    }), undefined);
+  }
+
+  if (typeof store.touch === 'function') {
+    wrapped.touch = (sid, sess, cb) => safeCall(() => store.touch(sid, sess, (err) => {
+      if (err) {
+        console.error("[Session Store] ⚠️ touch() failed (swallowed):", err?.message || err);
+        return cb?.(null);
+      }
+      return cb?.(null);
+    }), undefined);
+  }
+
+  return wrapped;
+}
+
+const resilientSessionStore = createResilientSessionStore(sessionStore);
+
 // Aplicar middleware de sesión SIEMPRE (no dentro de try-catch para asegurar que se aplique)
 app.use(
   session({
     secret: sessionSecret,
-    store: sessionStore || undefined, // Usar Prisma para almacenamiento persistente (fallback a memoria si falla)
+    store: resilientSessionStore || undefined, // Persistente si está disponible; resiliente a fallos de store
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -519,6 +582,34 @@ app.use(
   })
 );
 console.log("[Init] ✅ Session middleware configured");
+
+// If the session store (Redis/Prisma store) flakes in serverless, express-session will
+// call next(err) and Express would return a 500. For this CMS, JWT auth is the primary
+// path, so we degrade gracefully by continuing without a session.
+app.use((err, req, res, next) => {
+  const message = (err?.message || '').toLowerCase();
+  const isTransientStoreError =
+    message.includes('socket closed unexpectedly') ||
+    message.includes('the client is closed') ||
+    message.includes('econnreset') ||
+    message.includes('connection terminated') ||
+    message.includes('read econnreset') ||
+    message.includes('write econnreset');
+
+  if (isTransientStoreError) {
+    console.error('[Session Middleware] ⚠️ Transient store error (swallowed):', {
+      message: err?.message,
+      name: err?.name,
+      code: err?.code,
+      path: req?.path,
+      method: req?.method,
+    });
+    req.session = undefined;
+    return next();
+  }
+
+  return next(err);
+});
 
 // Inicializar Passport (DESPUÉS de express-session)
 console.log("[Init] Setting up Passport...");
@@ -1386,8 +1477,13 @@ app.post("/auth/register", authRateLimiter, async (req, res) => {
     }
 
     // Crear sesión (pero el usuario no está verificado aún)
-    req.session.userId = user.id;
-    req.session.userEmail = user.email;
+    // Nota: en serverless, el store puede fallar de forma intermitente. No debe tumbar el registro.
+    if (req.session) {
+      req.session.userId = user.id;
+      req.session.userEmail = user.email;
+    } else {
+      console.warn('[Register] ⚠️ Session not available; continuing without session');
+    }
 
     // Registrar en auditoría
     await logAuditEvent(req, "user_registered", "user", user.id, { email: user.email });
@@ -1457,49 +1553,53 @@ app.post("/auth/login", async (req, res) => {
       });
     }
 
-    // Crear sesión
-    req.session.userId = user.id;
-    req.session.userEmail = user.email;
-    req.session.isAdmin = user.isAdmin || false;
-    
-    console.log("[Login] Setting session data:", {
-      userId: user.id,
-      userEmail: user.email,
-      isAdmin: user.isAdmin,
-      sessionID: req.sessionID,
-      cookie: req.session.cookie
-    });
-    
-    // Guardar sesión explícitamente antes de enviar respuesta.
-    // NOTA: Esto NO debe tumbar el login: el flujo principal usa JWT.
+    // Crear sesión (opcional; JWT es el flujo principal)
+    // NOTA: Esto NO debe tumbar el login: si el store falla, seguimos devolviendo JWT.
     let sessionSaveError = null;
-    try {
-      await new Promise((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) return reject(err);
-          resolve();
+    if (req.session) {
+      req.session.userId = user.id;
+      req.session.userEmail = user.email;
+      req.session.isAdmin = user.isAdmin || false;
+
+      console.log("[Login] Setting session data:", {
+        userId: user.id,
+        userEmail: user.email,
+        isAdmin: user.isAdmin,
+        sessionID: req.sessionID,
+        cookie: req.session.cookie
+      });
+
+      try {
+        await new Promise((resolve, reject) => {
+          req.session.save((err) => {
+            if (err) return reject(err);
+            resolve();
+          });
         });
-      });
-      console.log("[Login] ✅ Session saved successfully");
-      console.log("[Login] Session ID:", req.sessionID);
-      console.log("[Login] Session cookie will be set:", {
-        secure: req.session.cookie.secure,
-        sameSite: req.session.cookie.sameSite,
-        httpOnly: req.session.cookie.httpOnly,
-        maxAge: req.session.cookie.maxAge
-      });
-    } catch (err) {
-      sessionSaveError = err;
-      console.error("[Login] ⚠️ Session save failed (continuing with JWT):", {
-        message: err.message,
-        stack: err.stack,
-        code: err.code
-      });
+        console.log("[Login] ✅ Session saved successfully");
+        console.log("[Login] Session ID:", req.sessionID);
+        console.log("[Login] Session cookie will be set:", {
+          secure: req.session.cookie.secure,
+          sameSite: req.session.cookie.sameSite,
+          httpOnly: req.session.cookie.httpOnly,
+          maxAge: req.session.cookie.maxAge
+        });
+      } catch (err) {
+        sessionSaveError = err;
+        console.error("[Login] ⚠️ Session save failed (continuing with JWT):", {
+          message: err.message,
+          stack: err.stack,
+          code: err.code
+        });
+      }
+    } else {
+      sessionSaveError = new Error('Session not available');
+      console.warn('[Login] ⚠️ Session not available; continuing with JWT only');
     }
     
     // Verificar que la sesión se guardó correctamente
     try {
-      if (sessionStore && typeof sessionStore.get === 'function') {
+      if (sessionStore && typeof sessionStore.get === 'function' && req.sessionID) {
         await new Promise((resolve, reject) => {
           sessionStore.get(req.sessionID, (err, sessionData) => {
             if (err) {
