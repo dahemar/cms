@@ -2679,9 +2679,7 @@
         if (!currentSiteId) return;
         
         try {
-          const res = await fetch(`${API_URL}/tags?siteId=${currentSiteId}`, {
-            credentials: "include",
-          });
+          const res = await fetchWithAuth(`${API_URL}/tags?siteId=${currentSiteId}`);
           if (res.ok) {
             tags = await res.json();
             const filterTagSelect = document.getElementById("filter-tag");
@@ -2706,9 +2704,7 @@
         if (!currentSiteId) return;
         
         try {
-          const res = await fetch(`${API_URL}/sections?siteId=${currentSiteId}`, {
-            credentials: "include",
-          });
+          const res = await fetchWithAuth(`${API_URL}/sections?siteId=${currentSiteId}`);
           if (res.ok) {
             sections = await res.json();
             // Filtrar secciones "detailPage" por si acaso (aunque el backend ya las filtra)
@@ -4067,9 +4063,7 @@
           if (currentFilters.sectionId) params.append("sectionId", currentFilters.sectionId);
           
           console.log("[Load Posts] Fetching from:", `${API_URL}/posts/all?${params.toString()}`);
-          const res = await fetch(`${API_URL}/posts/all?${params.toString()}`, {
-            credentials: "include",
-          });
+          const res = await fetchWithAuth(`${API_URL}/posts/all?${params.toString()}`);
           
           console.log("[Load Posts] Response status:", res.status);
           
@@ -6041,10 +6035,8 @@
             payloadSize: JSON.stringify(payload).length
           });
 
-          const res = await fetch(url, {
+          const res = await fetchWithAuth(url, {
             method,
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify(payload),
           });
           
@@ -6179,8 +6171,7 @@
             siteId: currentSiteId.toString(),
             _t: Date.now().toString() // Cache busting
           });
-          const res = await fetch(`${API_URL}/posts/all?${params.toString()}`, {
-            credentials: "include",
+          const res = await fetchWithAuth(`${API_URL}/posts/all?${params.toString()}`, {
             cache: "no-store" // Forzar no usar caché del navegador
           });
           
@@ -6408,9 +6399,8 @@
         }
 
         try {
-          const res = await fetch(`${API_URL}/posts/${id}?siteId=${currentSiteId}`, {
+          const res = await fetchWithAuth(`${API_URL}/posts/${id}?siteId=${currentSiteId}`, {
             method: "DELETE",
-            credentials: "include",
           });
           
           if (res.status === 401) {
