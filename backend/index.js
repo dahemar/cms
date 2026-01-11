@@ -4968,30 +4968,14 @@ app.use((req, res) => {
   }
 });
 
-// Manejo de errores global para evitar crashes
-app.use((err, req, res, next) => {
-  console.error("[Error Handler] Unhandled error:", err);
-  console.error("[Error Handler] Stack:", err.stack);
-  console.error("[Error Handler] Request:", req.method, req.path);
-  
-  // Asegurar que siempre devolvemos JSON, no HTML
-  if (!res.headersSent) {
-    res.setHeader('Content-Type', 'application/json');
-    res.status(err.status || 500).json({ 
-      error: err.message || "Internal server error",
-      message: process.env.NODE_ENV === "production" ? "An error occurred" : err.message,
-      ...(process.env.NODE_ENV === "development" && { stack: err.stack })
-    });
-  }
-});
-
-// Export handler for Vercel serverless
 // ==================== MIDDLEWARES DE ERROR GLOBAL ====================
-// IMPORTANTE: Estos middlewares deben ir AL FINAL, después de todas las rutas
+// IMPORTANTE: Estos middlewares deben ir AL FINAL, ANTES de module.exports
+// para que funcionen en Vercel serverless
 
 // Middleware 404: Capturar todas las rutas no encontradas y devolver JSON
 app.use((req, res) => {
   console.error(`[404] Route not found: ${req.method} ${req.path}`);
+  res.setHeader('Content-Type', 'application/json');
   res.status(404).json({ 
     error: "Route not found",
     path: req.path,
@@ -5009,14 +4993,19 @@ app.use((err, req, res, next) => {
   });
   
   // Asegurar que siempre se devuelva JSON, nunca HTML
-  res.status(err.status || 500).json({
-    error: err.message || "Internal server error",
-    path: req.path,
-    method: req.method,
-    details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-  });
+  if (!res.headersSent) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(err.status || 500).json({
+      error: err.message || "Internal server error",
+      path: req.path,
+      method: req.method,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    });
+  }
 });
 
+// Export handler for Vercel serverless
+// IMPORTANTE: module.exports debe ir DESPUÉS de todos los middlewares
 module.exports = app;
 
 // Only listen if running locally (not in Vercel)
