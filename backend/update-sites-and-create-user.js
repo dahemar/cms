@@ -86,9 +86,9 @@ async function main() {
   });
 
   if (!user) {
-    // Generar un password temporal (el usuario deberá hacer reset password)
-    const tempPassword = require("crypto").randomBytes(16).toString("hex");
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+    // Usar la contraseña especificada
+    const password = "neuzaneuza";
+    const hashedPassword = await bcrypt.hash(password, 10);
     
     user = await prisma.user.create({
       data: {
@@ -99,17 +99,21 @@ async function main() {
       }
     });
     console.log(`✅ Created user: ${userEmail}`);
-    console.log(`   ⚠️  User will need to reset password to login (use "Forgot Password" feature)`);
+    console.log(`   ✅ Password set to: neuzaneuza`);
   } else {
     console.log(`✅ User already exists: ${userEmail}`);
-    // Asegurar que no sea admin
-    if (user.isAdmin) {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { isAdmin: false }
-      });
-      console.log(`   ✅ Updated user to non-admin`);
-    }
+    // Actualizar contraseña si el usuario ya existe
+    const password = "neuzaneuza";
+    const hashedPassword = await bcrypt.hash(password, 10);
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        isAdmin: false
+      }
+    });
+    console.log(`   ✅ Updated password to: neuzaneuza`);
+    console.log(`   ✅ Ensured user is non-admin`);
   }
 
   // 5. Asignar usuario al sitio cineclube
