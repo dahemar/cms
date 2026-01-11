@@ -4986,6 +4986,37 @@ app.use((err, req, res, next) => {
 });
 
 // Export handler for Vercel serverless
+// ==================== MIDDLEWARES DE ERROR GLOBAL ====================
+// IMPORTANTE: Estos middlewares deben ir AL FINAL, después de todas las rutas
+
+// Middleware 404: Capturar todas las rutas no encontradas y devolver JSON
+app.use((req, res) => {
+  console.error(`[404] Route not found: ${req.method} ${req.path}`);
+  res.status(404).json({ 
+    error: "Route not found",
+    path: req.path,
+    method: req.method
+  });
+});
+
+// Middleware de error global: Capturar todos los errores no manejados
+app.use((err, req, res, next) => {
+  console.error('[Global Error Handler] Unhandled error:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+  });
+  
+  // Asegurar que siempre se devuelva JSON, nunca HTML
+  res.status(err.status || 500).json({
+    error: err.message || "Internal server error",
+    path: req.path,
+    method: req.method,
+    details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+  });
+});
+
 module.exports = app;
 
 // Only listen if running locally (not in Vercel)
