@@ -2772,16 +2772,42 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
         };
       }
       
-      // Logging para debugging
-      console.log("[Backend PUT /posts/:id] Blocks to create:", blocksToCreate.length);
-      if (process.env.NODE_ENV === 'development') {
-        console.log("[Backend PUT /posts/:id] updateData.blocks:", JSON.stringify(updateData.blocks, null, 2));
+      // Logging MUY detallado para debugging
+      console.log(`[${requestId}] [Backend PUT /posts/:id] Blocks to create:`, blocksToCreate.length);
+      console.log(`[${requestId}] [Backend PUT /posts/:id] Blocks structure:`, JSON.stringify(blocksToCreate.map(b => ({
+        type: b.type,
+        order: b.order,
+        hasContent: !!b.content,
+        contentLength: b.content?.length || 0,
+        hasMetadata: !!b.metadata,
+        metadataKeys: b.metadata ? Object.keys(b.metadata) : []
+      })), null, 2));
+      
+      // Validar estructura de bloques antes de la transacción
+      for (let i = 0; i < blocksToCreate.length; i++) {
+        const block = blocksToCreate[i];
+        if (!block.type) {
+          throw new Error(`Block ${i} missing type`);
+        }
+        if (typeof block.order !== 'number' || !Number.isInteger(block.order)) {
+          throw new Error(`Block ${i} has invalid order: ${block.order} (type: ${typeof block.order})`);
+        }
+        // content puede ser null para algunos tipos, pero debe ser string si existe
+        if (block.content !== null && typeof block.content !== 'string') {
+          throw new Error(`Block ${i} has invalid content type: ${typeof block.content}`);
+        }
       }
+      
+      console.log(`[${requestId}] [Backend PUT /posts/:id] updateData structure:`, {
+        hasBlocks: !!updateData.blocks,
+        blocksCreateLength: updateData.blocks?.create?.length || 0,
+        updateDataKeys: Object.keys(updateData).filter(k => k !== 'blocks'),
+      });
       
       // ⚠️ SOLUCIÓN CRÍTICA: Envolver deleteMany + update en una única transacción atómica
       // Esto evita problemas de snapshot inconsistente y constraints en Supabase/serverless
       // CRÍTICO: Timeout de 12s (menos que el límite de Vercel de ~15s)
-      console.log(`[${requestId}] [Backend PUT /posts/:id] BEFORE transaction`);
+      console.log(`[${requestId}] [Backend PUT /posts/:id] BEFORE transaction - postId: ${id}, blocks: ${blocksToCreate.length}`);
       
       // Helper para timeout manual (más seguro que confiar solo en Prisma)
       const withTimeout = (promise, ms) => {
@@ -2794,15 +2820,17 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
       };
 
       try {
+        console.log(`[${requestId}] [Backend PUT /posts/:id] Starting transaction...`);
         post = await withTimeout(
           prisma.$transaction(async (tx) => {
-            // Eliminar bloques existentes dentro de la transacción
-            await tx.postBlock.deleteMany({
+            console.log(`[${requestId}] [Transaction] Step 1: Deleting existing blocks for postId: ${id}`);
+            const deleteResult = await tx.postBlock.deleteMany({
               where: { postId: id },
             });
+            console.log(`[${requestId}] [Transaction] Deleted ${deleteResult.count} blocks`);
             
-            // Actualizar post y crear nuevos bloques en la misma transacción
-            return tx.post.update({
+            console.log(`[${requestId}] [Transaction] Step 2: Updating post and creating ${blocksToCreate.length} new blocks`);
+            const updatedPost = await tx.post.update({
               where: { id },
               data: updateData,
               include: {
@@ -2813,20 +2841,35 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
                 },
               },
             });
+            console.log(`[${requestId}] [Transaction] Post updated, created ${updatedPost.blocks.length} blocks`);
+            return updatedPost;
           }, {
             timeout: 12000, // 12 segundos (menos que límite de Vercel)
           }),
           12000 // Timeout manual también
         );
         
-        console.log(`[${requestId}] [Backend PUT /posts/:id] AFTER transaction`);
+        console.log(`[${requestId}] [Backend PUT /posts/:id] AFTER transaction - SUCCESS`);
       } catch (transactionErr) {
+        // Logging MUY detallado del error de Prisma
         console.error(`[${requestId}] [Backend PUT /posts/:id] ERROR in transaction:`, {
           message: transactionErr.message,
           stack: transactionErr.stack,
           name: transactionErr.name,
           code: transactionErr.code,
+          // Prisma-specific error details
+          meta: transactionErr.meta,
+          clientVersion: transactionErr.clientVersion,
+          // Si es un error de Prisma conocido
+          isPrismaError: transactionErr.code?.startsWith('P'),
         });
+        
+        // Log adicional para errores específicos de Prisma
+        if (transactionErr.code?.startsWith('P')) {
+          console.error(`[${requestId}] [Backend PUT /posts/:id] Prisma Error Code: ${transactionErr.code}`);
+          console.error(`[${requestId}] [Backend PUT /posts/:id] Prisma Error Meta:`, JSON.stringify(transactionErr.meta, null, 2));
+        }
+        
         // Re-lanzar el error para que sea capturado por el catch principal
         throw transactionErr;
       }
