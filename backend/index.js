@@ -436,35 +436,21 @@ if (isProduction) {
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       exposedHeaders: ['Set-Cookie'],
+      maxAge: 86400, // 24h preflight cache
     };
     console.log("[Init] CORS allowed origins (explicit):", allowedOriginsList);
   } else {
-    // En Vercel, permitir todos los subdominios de vercel.app dinámicamente
+    // Si no hay ALLOWED_ORIGINS, reflejar el Origin (sin wildcard) para evitar
+    // 500s por callback(err) y mantener compatibilidad con dominios custom.
     corsOptions = {
-      origin: (origin, callback) => {
-        // Permitir requests sin origin (ej: Postman, curl, server-to-server)
-        if (!origin) {
-          console.log("[CORS] Request without origin, allowing");
-          return callback(null, true);
-        }
-        console.log("[CORS] Checking origin:", origin);
-        // Permitir cualquier subdominio de vercel.app, localhost, o cualquier dominio de Vercel
-        if (origin.includes('.vercel.app') || 
-            origin.includes('localhost') || 
-            origin.includes('127.0.0.1') ||
-            origin.endsWith('.vercel.app')) {
-          console.log("[CORS] Origin allowed:", origin);
-          return callback(null, true);
-        }
-        console.log("[CORS] Origin blocked:", origin);
-        callback(new Error('Not allowed by CORS'));
-      },
+      origin: true,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       exposedHeaders: ['Set-Cookie'],
+      maxAge: 86400, // 24h preflight cache
     };
-    console.log("[Init] CORS configured with dynamic origin function (Vercel)");
+    console.log("[Init] CORS configured with origin reflection (no ALLOWED_ORIGINS)");
   }
 } else {
   corsOptions = {
@@ -473,6 +459,7 @@ if (isProduction) {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['Set-Cookie'],
+    maxAge: 86400,
   };
   console.log("[Init] CORS configured for development (all origins)");
 }
@@ -491,41 +478,7 @@ console.log("[Init] Setting up CORS and body parsers...");
 try {
   // Aplicar CORS middleware
   app.use(cors(corsOptions));
-  
-  // Manejar preflight requests explícitamente
-  // El middleware de CORS debería manejar esto, pero lo reforzamos para asegurar que funcione
-  app.use((req, res, next) => {
-    if (req.method === 'OPTIONS') {
-      // Aplicar CORS manualmente para preflight
-      const origin = req.headers.origin;
-      let allowOrigin = false;
-      
-      if (origin) {
-        // Si ALLOWED_ORIGINS está configurada, verificar contra la lista
-        if (isProduction && process.env.ALLOWED_ORIGINS) {
-          const allowedOriginsList = process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim());
-          allowOrigin = allowedOriginsList.includes(origin);
-        } else {
-          // Si no está configurada, permitir cualquier subdominio de vercel.app
-          allowOrigin = origin.includes('.vercel.app') || 
-                       origin.includes('localhost') || 
-                       origin.includes('127.0.0.1') ||
-                       origin.endsWith('.vercel.app');
-        }
-        
-        if (allowOrigin) {
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
-          res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
-        }
-      }
-      return res.status(204).end();
-    }
-    next();
-  });
-  
+
   console.log("[Init] ✅ CORS configured with credentials support");
   
   // Aumentar límite del body parser para permitir imágenes base64 grandes

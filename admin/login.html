@@ -342,6 +342,20 @@
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
 
+        async function readJsonOrText(res) {
+          const contentType = (res.headers.get('content-type') || '').toLowerCase();
+          const text = await res.text();
+          const maybeJson = contentType.includes('application/json') || text.trim().startsWith('{') || text.trim().startsWith('[');
+          if (maybeJson) {
+            try {
+              return { json: JSON.parse(text), text };
+            } catch (err) {
+              return { json: null, text };
+            }
+          }
+          return { json: null, text };
+        }
+
         try {
           const res = await fetch(`${API_URL}/auth/login`, {
             method: "POST",
@@ -350,12 +364,17 @@
             body: JSON.stringify({ email, password }),
           });
 
+          const { json: data, text: rawText } = await readJsonOrText(res);
+
           if (!res.ok) {
-            const error = await res.json();
-            throw new Error(error.error || "Login failed");
+            const shortText = rawText ? rawText.slice(0, 200) : '';
+            const msg = data?.error || data?.message || shortText || `HTTP ${res.status}`;
+            throw new Error(msg);
           }
 
-          const data = await res.json();
+          if (!data) {
+            throw new Error(`Unexpected non-JSON response (HTTP ${res.status}). ${rawText ? rawText.slice(0, 200) : ''}`);
+          }
           
           console.log("[Login] Response data:", data);
           
