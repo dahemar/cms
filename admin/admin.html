@@ -6079,7 +6079,7 @@
             siteId: currentSiteId.toString(),
             _t: Date.now().toString() // Cache busting
           });
-          const res = await fetch(`${API_URL}/posts/all?${params.toString()}`, {
+          const res = await authFetch(`${API_URL}/posts/all?${params.toString()}`, {
             credentials: "include",
             cache: "no-store" // Forzar no usar caché del navegador
           });
