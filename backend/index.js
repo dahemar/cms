@@ -108,17 +108,19 @@ try {
     console.error("[Prisma] ❌ DATABASE_URL is not set!");
     // No lanzar error aquí, permitir que la app inicie y devolver error JSON en los endpoints
     console.warn("[Prisma] ⚠️ DATABASE_URL not set, database operations will fail");
-  }
-  
-  prisma = new PrismaClient({
-    log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
-    datasources: {
-      db: {
-        url: databaseUrl,
+    // No intentar crear PrismaClient sin URL, se inicializará cuando se necesite
+    prisma = null;
+  } else {
+    prisma = new PrismaClient({
+      log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
+      datasources: {
+        db: {
+          url: databaseUrl,
+        },
       },
-    },
-  });
-  console.log("[Prisma] ✅ PrismaClient initialized");
+    });
+    console.log("[Prisma] ✅ PrismaClient initialized");
+  }
   
   // Intentar crear la tabla Session si no existe (crítico para sesiones en producción)
   // Ejecutar de forma asíncrona sin bloquear el inicio del servidor
