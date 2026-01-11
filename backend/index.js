@@ -3,6 +3,28 @@ console.log("[Init] Timestamp:", new Date().toISOString());
 console.log("[Init] Node version:", process.version);
 console.log("[Init] NODE_ENV:", process.env.NODE_ENV);
 
+// ==================== GLOBAL ERROR HANDLERS (fuera de Express) ====================
+// Estos capturan errores que ocurren ANTES de que Express pueda responder
+// No pueden devolver JSON, pero nos permiten loguear y entender qué falla
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION]', {
+    reason: reason?.message || reason,
+    stack: reason?.stack,
+    promise: promise?.toString(),
+  });
+  // No hacer process.exit() en Vercel, solo loguear
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT EXCEPTION]', {
+    message: error.message,
+    stack: error.stack,
+    name: error.name,
+  });
+  // No hacer process.exit() en Vercel, solo loguear
+});
+
 // Cargar dotenv solo si existe (opcional, Vercel ya tiene las variables de entorno)
 try {
   console.log("[Init] Loading dotenv...");
