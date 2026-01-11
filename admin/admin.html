@@ -6373,3 +6373,1946 @@
             return blockData;
           });
           console.log(`[Edit Post] Total blocks loaded: ${postBlocks.length}`);
+          renderBlocks();
+          }
+          
+          // Cargar contenido HTML en el editor Quill (legacy, solo si no hay bloques)
+          if (quillEditor) {
+            if (postBlocks.length === 0 && post.content) {
+              quillEditor.root.innerHTML = post.content || '';
+              document.getElementById("content").value = post.content || '';
+              document.getElementById("legacy-editor-container").style.display = "block";
+            } else {
+              document.getElementById("legacy-editor-container").style.display = "none";
+            }
+          }
+          
+          document.getElementById("published").checked = post.published;
+          document.getElementById("form-title").textContent = "Edit Post";
+          document.getElementById("submit-btn").textContent = "Update";
+          document.getElementById("cancel-btn").style.display = "block";
+
+          // Scroll al formulario de edición
+          const formContainer = document.getElementById("post-form-container");
+          if (formContainer) {
+            formContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        } catch (err) {
+          showMessage(`Error: ${err.message}`, "error");
+        }
+      }
+
+      // Eliminar post
+      async function deletePost(id) {
+        if (!confirm("Are you sure you want to delete this post?")) {
+          return;
+        }
+
+        if (!currentSiteId) {
+          showMessage("No site selected. Please select a site.", "error");
+          return;
+        }
+
+        try {
+          const res = await fetchWithAuth(`${API_URL}/posts/${id}?siteId=${currentSiteId}`, {
+            method: "DELETE",
+          });
+          
+          if (res.status === 401) {
+            window.location.href = "login.html";
+            return;
+          }
+
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Failed to delete post");
+          }
+
+          showMessage("Post deleted successfully", "success");
+          loadPosts();
+        } catch (err) {
+          showMessage(`Error: ${err.message}`, "error");
+        }
+      }
+
+      // Renderizar tags seleccionados
+      function renderSelectedTags() {
+        const container = document.getElementById("tags-container");
+        container.innerHTML = selectedTags.map(tag => 
+          `<span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: #ffffff; color: #000000; border: 1px solid #000000; border-radius: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: all 0.2s ease;" onclick="removeTag(${tag.id})" onmouseover="this.style.background='#000000'; this.style.color='#ffffff';" onmouseout="this.style.background='#ffffff'; this.style.color='#000000';">
+            ${escapeHtml(tag.name)} ×
+          </span>`
+        ).join("");
+      }
+
+      // Añadir tag
+      function addTag() {
+        const input = document.getElementById("tag-input");
+        const tagName = input.value.trim();
+        
+        if (!tagName) return;
+        
+        // Buscar si el tag ya existe
+        let tag = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+        
+        if (!tag) {
+          if (!currentSiteId) {
+            showMessage("No site selected. Please select a site.", "error");
+            return;
+          }
+          
+          // Crear nuevo tag
+          fetch(`${API_URL}/tags`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ name: tagName, siteId: currentSiteId }),
+          })
+          .then(res => res.json())
+          .then(newTag => {
+            tags.push(newTag);
+            selectedTags.push(newTag);
+            renderSelectedTags();
+            input.value = "";
+            // Actualizar select de filtros
+            const filterTagSelect = document.getElementById("filter-tag");
+            const option = document.createElement("option");
+            option.value = newTag.id;
+            option.textContent = newTag.name;
+            filterTagSelect.appendChild(option);
+          })
+          .catch(err => {
+            console.error("Error creating tag:", err);
+            showMessage("Error creating tag", "error");
+          });
+        } else {
+          // Tag ya existe, añadirlo si no está ya seleccionado
+          if (!selectedTags.find(t => t.id === tag.id)) {
+            selectedTags.push(tag);
+            renderSelectedTags();
+          }
+          input.value = "";
+        }
+      }
+
+      // Eliminar tag
+      function removeTag(tagId) {
+        selectedTags = selectedTags.filter(t => t.id !== tagId);
+        renderSelectedTags();
+      }
+
+      // Resetear formulario
+      function resetForm() {
+        console.log("[Reset Form] Resetting form...");
+        editingPostId = null;
+        document.getElementById("post-form").reset();
+        document.getElementById("post-id").value = "";
+        document.getElementById("section").value = "";
+        const orderEl = document.getElementById("post-order");
+        if (orderEl) orderEl.value = 0;
+        // Limpiar editor de título
+        if (titleQuillEditor) {
+          titleQuillEditor.root.innerHTML = '';
+        }
+        document.getElementById("title").value = "";
+        selectedTags = [];
+        renderSelectedTags();
+        updateSectionTypeInfo();
+        // Limpiar el editor Quill
+        if (quillEditor) {
+          quillEditor.setContents([]);
+          quillEditor.setText('');
+        }
+        document.getElementById("content").value = '';
+        // Limpiar slideshow
+        slideshowSlides = [];
+        if (currentPostType === 'slideshow') {
+          renderSlideshowSlides();
+          updateSlideshowPreview();
+        }
+        // Limpiar bloques
+        postBlocks = [];
+        console.log("[Reset Form] postBlocks cleared, length:", postBlocks.length);
+        renderBlocks();
+        document.getElementById("form-title").textContent = "Create New Post";
+        document.getElementById("submit-btn").textContent = "Save";
+        document.getElementById("cancel-btn").style.display = "none";
+        // Remover required del campo thumbnail cuando se resetea el formulario
+        const thumbnailImageUrlInput = document.getElementById("thumbnail-image-url");
+        if (thumbnailImageUrlInput) thumbnailImageUrlInput.removeAttribute("required");
+      }
+
+      // Botón cancelar
+      document.getElementById("cancel-btn").addEventListener("click", resetForm);
+
+      // Función para renderizar bloques en el preview
+      function renderBlocksForPreview(blocks) {
+        if (!blocks || blocks.length === 0) {
+          return '';
+        }
+
+        let html = '<div class="preview-blocks-container">';
+        let currentRow = [];
+        let currentRowWidth = 0;
+
+        blocks.forEach((block, index) => {
+          const width = (block.metadata && block.metadata.width) || 'full';
+          let blockWidth = 1; // full width = 1
+
+          if (width === 'half') blockWidth = 0.5;
+          else if (width === 'third') blockWidth = 0.333;
+          else if (width === 'two-thirds') blockWidth = 0.666;
+
+          // Si el bloque es full width o la fila actual + este bloque > 1, cerrar la fila anterior
+          if (width === 'full' || (currentRowWidth + blockWidth > 1 && currentRow.length > 0)) {
+            if (currentRow.length > 0) {
+              html += '<div class="preview-blocks-row">';
+              currentRow.forEach(blockHtml => {
+                html += blockHtml;
+              });
+              html += '</div>';
+              currentRow = [];
+              currentRowWidth = 0;
+            }
+          }
+
+          // Renderizar el bloque según su tipo
+          let blockHtml = '';
+          if (block.type === 'text') {
+            blockHtml = `<div class="preview-block-item" data-width="${width}">${block.content || ''}</div>`;
+          } else if (block.type === 'image') {
+            const caption = (block.metadata && block.metadata.caption) ? `<p style="font-size: 12px; color: #666; margin-top: 8px; font-style: italic;">${escapeHtml(block.metadata.caption)}</p>` : '';
+            const imgHtml = block.content ? createImageWithFallback(block.content, '', 'max-width: 100%; height: auto; border-radius: 0; margin: 0; border: 1px solid #000000;') : '';
+            blockHtml = `<div class="preview-block-item" data-width="${width}">${imgHtml}${caption}</div>`;
+          } else if (block.type === 'video') {
+            let videoHtml = '';
+            if (block.content) {
+              const youtubeId = extractYouTubeId(block.content);
+              const vimeoId = extractVimeoId(block.content);
+              if (youtubeId) {
+                videoHtml = createYouTubeEmbed(youtubeId, block.content);
+              } else if (vimeoId) {
+                videoHtml = createVimeoEmbed(vimeoId, block.content);
+              }
+            }
+            blockHtml = `<div class="preview-block-item" data-width="${width}">${videoHtml}</div>`;
+          } else if (block.type === 'slideshow') {
+            const images = (block.metadata && block.metadata.images) || [];
+            const config = (block.metadata && block.metadata.slideshowConfig) || {};
+            const showArrows = config.showArrows !== undefined ? config.showArrows : true;
+            const arrowStyle = config.arrowStyle || 'arrows';
+            const autoPlay = config.autoPlay !== undefined ? config.autoPlay : false;
+            const slideDuration = config.slideDuration || 3;
+            
+            const slideshowId = `preview-slideshow-${Date.now()}-${index}`;
+            
+            // Crear HTML del slideshow
+            let slideshowHtml = `<div class="slideshow-wrapper" id="${slideshowId}" data-auto-play="${autoPlay}" data-slide-duration="${slideDuration * 1000}">`;
+            slideshowHtml += '<div class="slideshow-container">';
+            
+            images.forEach((img, imgIndex) => {
+              const imgHtml = img.url ? createImageWithFallback(img.url, '', 'max-width: 100%; height: auto; border-radius: 0; margin: 0; border: 1px solid #000000;') : '';
+              const caption = img.caption ? `<div class="slideshow-caption">${escapeHtml(img.caption)}</div>` : '';
+              const activeClass = imgIndex === 0 ? 'active' : '';
+              slideshowHtml += `<div class="slideshow-slide ${activeClass}" data-slide-index="${imgIndex}">${imgHtml}${caption}</div>`;
+            });
+            
+            slideshowHtml += '</div>';
+            
+            // Añadir flechas de navegación si está habilitado
+            if (showArrows && images.length > 1) {
+              const arrowSymbols = {
+                'arrows': { left: '←', right: '→' },
+                'chevrons': { left: '‹', right: '›' },
+                'circles': { left: '◯', right: '◯' },
+                'triangles': { left: '◀', right: '▶' }
+              };
+              const arrows = arrowSymbols[arrowStyle] || arrowSymbols['arrows'];
+              slideshowHtml += `<button class="slideshow-arrow slideshow-prev" aria-label="Previous">${arrows.left}</button>`;
+              slideshowHtml += `<button class="slideshow-arrow slideshow-next" aria-label="Next">${arrows.right}</button>`;
+            }
+            
+            // Indicadores de slide
+            if (images.length > 1) {
+              slideshowHtml += '<div class="slideshow-indicators">';
+              images.forEach((img, imgIndex) => {
+                const activeClass = imgIndex === 0 ? 'active' : '';
+                slideshowHtml += `<button class="slideshow-indicator ${activeClass}" data-slide-index="${imgIndex}" aria-label="Go to slide ${imgIndex + 1}"></button>`;
+              });
+              slideshowHtml += '</div>';
+            }
+            
+            slideshowHtml += '</div>';
+            blockHtml = `<div class="preview-block-item" data-width="${width}">${slideshowHtml}</div>`;
+          } else if (block.type === 'link') {
+            const href = String(block.content || '').trim();
+            const safeHref = escapeHtml(href);
+            const linkHtml = href
+              ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeHref}</a>`
+              : '';
+            blockHtml = `<div class="preview-block-item" data-width="${width}">${linkHtml}</div>`;
+          } else if (block.type === 'embed_instagram' || block.type === 'embed_soundcloud') {
+            blockHtml = `<div class="preview-block-item" data-width="${width}">${block.content || ''}</div>`;
+          } else {
+            // Tipo desconocido, renderizar como HTML
+            blockHtml = `<div class="preview-block-item" data-width="${width}">${block.content || ''}</div>`;
+          }
+
+          if (width === 'full') {
+            html += blockHtml;
+          } else {
+            currentRow.push(blockHtml);
+            currentRowWidth += blockWidth;
+          }
+        });
+
+        // Cerrar la última fila si hay bloques pendientes
+        if (currentRow.length > 0) {
+          html += '<div class="preview-blocks-row">';
+          currentRow.forEach(blockHtml => {
+            html += blockHtml;
+          });
+          html += '</div>';
+        }
+
+        html += '</div>';
+        return html;
+      }
+
+      // Preview functionality removed
+      function initPreviewListeners() {
+        // Preview functionality removed
+      }
+
+      // Inicializar listeners cuando el DOM esté listo
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initPreviewListeners);
+      } else {
+        initPreviewListeners();
+      }
+
+      // Variables para el editor de imágenes
+      let imageCropper = null;
+      let currentImageIndex = null;
+      let currentImageUrl = null;
+      let currentImageElement = null; // Guardar referencia al elemento img
+
+      // Variables para el editor de imágenes con contexto de bloque
+      let currentBlockContext = null; // { type: 'image'|'slideshow', blockIndex, imageIndex? }
+
+      // Variables para el editor de slideshow
+      let currentSlideshowBlock = null;
+      let currentSlideshowBlockIndex = null;
+      let slideshowImageCroppers = {}; // { imageIndex: cropperInstance }
+      
+      function openImageEditor(imageUrl, imageIndex, quillInstance) {
+        currentImageUrl = imageUrl;
+        currentImageIndex = imageIndex;
+        currentBlockContext = null;
+        
+        // Si se pasa una instancia de Quill, usarla en lugar del editor principal
+        const editor = quillInstance || quillEditor;
+        
+        // Buscar el elemento img en el editor si no tenemos el índice
+        if (!currentImageElement && editor) {
+          const images = editor.root.querySelectorAll('img');
+          for (let img of images) {
+            if (img.src === imageUrl || img.src.includes(imageUrl.split('/').pop())) {
+              currentImageElement = img;
+              break;
+            }
+          }
+        }
+        
+        const img = document.getElementById('image-editor-img');
+        const modal = document.getElementById('image-editor-modal');
+        
+        if (!img || !modal) {
+          console.error('Image editor elements not found');
+          return;
+        }
+        
+        // Limpiar cropper anterior si existe
+        if (imageCropper) {
+          imageCropper.destroy();
+          imageCropper = null;
+        }
+        
+        // Resetear la imagen
+        img.src = '';
+        
+        // Cargar la imagen
+        img.src = imageUrl;
+        
+        img.onload = function() {
+          // Mostrar modal
+          modal.classList.add('show');
+          
+          // Esperar un momento para que el modal se renderice
+          setTimeout(function() {
+            // Inicializar Cropper.js
+            if (imageCropper) {
+              imageCropper.destroy();
+            }
+            
+            imageCropper = new Cropper(img, {
+              aspectRatio: NaN, // Permite cualquier proporción
+              viewMode: 1,
+              dragMode: 'move',
+              autoCropArea: 0.8,
+              restore: false,
+              guides: true,
+              center: true,
+              highlight: false,
+              cropBoxMovable: true,
+              cropBoxResizable: true,
+              toggleable: true,
+              minCropBoxWidth: 50,
+              minCropBoxHeight: 50,
+            });
+          }, 100);
+        };
+        
+        img.onerror = function() {
+          alert('Error loading image. Please check the URL.');
+          modal.classList.remove('show');
+        };
+      }
+
+      // Función para cerrar el editor de imágenes
+      function closeImageEditor() {
+        const modal = document.getElementById('image-editor-modal');
+        modal.classList.remove('show');
+        
+        if (imageCropper) {
+          imageCropper.destroy();
+          imageCropper = null;
+        }
+        
+        currentImageIndex = null;
+        currentImageUrl = null;
+        currentImageElement = null;
+      }
+
+      // Función para aplicar el recorte y reemplazar la imagen en el editor
+      function applyImageEdit() {
+        if (!imageCropper || !currentImageUrl) {
+          console.error('[Image Edit] Missing cropper or image URL');
+          return;
+        }
+        
+        console.log('[Image Edit] Starting image replacement. Original URL:', currentImageUrl);
+        
+        // Obtener el canvas recortado
+        const canvas = imageCropper.getCroppedCanvas({
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: 'high',
+        });
+        
+        if (!canvas) {
+          alert('Error creating cropped image');
+          return;
+        }
+        
+        // Convertir canvas a base64 (usar JPEG para menor tamaño)
+        const croppedImageUrl = canvas.toDataURL('image/jpeg', 0.9);
+        console.log('[Image Edit] Cropped image created. Base64 length:', croppedImageUrl.length);
+        
+        // Reemplazar la imagen en el editor Quill, bloque, slideshow-post o thumbnail
+        if (currentBlockContext) {
+          // Si es thumbnail, actualizar el campo de URL en el modal o en el formulario
+          if (currentBlockContext.type === 'thumbnail') {
+            if (currentBlockContext.field === 'thumbnail-image-url') {
+              // Es el campo de thumbnail en el formulario de posts
+              const imageUrlInput = document.getElementById('thumbnail-image-url');
+              if (imageUrlInput) {
+                imageUrlInput.value = croppedImageUrl;
+                // Actualizar preview
+                const preview = document.getElementById('thumbnail-image-preview');
+                if (preview) {
+                  const img = preview.querySelector("img");
+                  if (img) {
+                    img.src = croppedImageUrl;
+                    img.style.display = "block";
+                  } else {
+                    preview.innerHTML = `<img src="${croppedImageUrl}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />`;
+                  }
+                }
+              }
+            } else {
+              // Es el modal de edición de thumbnail
+              const imageUrlInput = document.getElementById('thumbnail-editor-image-url');
+              if (imageUrlInput) {
+                imageUrlInput.value = croppedImageUrl;
+                updateThumbnailImagePreview(croppedImageUrl);
+              }
+            }
+            // Cerrar el editor de imágenes
+            closeImageEditor();
+          }
+          // Si es slideshow-post, actualizar el slide
+          else if (currentBlockContext.type === 'slideshow-post' && currentBlockContext.slideIndex !== undefined) {
+            const slideIndex = currentBlockContext.slideIndex;
+            if (slideshowSlides[slideIndex]) {
+              slideshowSlides[slideIndex].imageUrl = croppedImageUrl;
+              renderSlideshowSlides();
+              updateSlideshowPreview();
+            }
+          } else {
+            // Actualizar imagen en el bloque
+            const block = currentBlockContext.block;
+            const blockIndex = currentBlockContext.blockIndex;
+            
+            if (block.type === 'image') {
+              // Actualizar URL de la imagen en el bloque
+              block.content = croppedImageUrl;
+              // Actualizar preview
+              const blockElement = document.querySelector(`.block-item[data-index="${blockIndex}"]`);
+              if (blockElement) {
+                const preview = blockElement.querySelector('.block-image-preview');
+                const input = blockElement.querySelector('.block-image-url-input');
+                if (preview) preview.src = croppedImageUrl;
+                if (input) input.value = croppedImageUrl;
+              }
+            } else if (block.type === 'slideshow' && currentBlockContext.imageIndex !== undefined) {
+              // Actualizar imagen en el slideshow
+              if (!block.metadata) block.metadata = {};
+              if (!block.metadata.images) block.metadata.images = [];
+              if (!block.metadata.images[currentBlockContext.imageIndex]) {
+                block.metadata.images[currentBlockContext.imageIndex] = {};
+              }
+              block.metadata.images[currentBlockContext.imageIndex].url = croppedImageUrl;
+              // Actualizar preview
+              renderBlocks();
+            }
+          }
+        } else if (quillEditor) {
+          let found = false;
+          
+          // Método 1: Si tenemos el elemento img directamente, reemplazarlo
+          if (currentImageElement && currentImageElement.parentNode) {
+            console.log('[Image Edit] Method 1: Replacing via element reference');
+            currentImageElement.src = croppedImageUrl;
+            found = true;
+          }
+          
+          // Método 2: Buscar en el contenido de Quill usando el índice
+          if (!found && currentImageIndex !== null) {
+            try {
+              console.log('[Image Edit] Method 2: Trying to replace by index:', currentImageIndex);
+              const op = quillEditor.getContents(currentImageIndex, 1);
+              if (op.ops && op.ops[0] && op.ops[0].insert && typeof op.ops[0].insert === 'object' && op.ops[0].insert.image) {
+                quillEditor.deleteText(currentImageIndex, 1);
+                quillEditor.insertEmbed(currentImageIndex, 'image', croppedImageUrl, 'user');
+                found = true;
+                console.log('[Image Edit] Method 2: Success');
+              }
+            } catch (e) {
+              console.warn('[Image Edit] Method 2 failed:', e);
+            }
+          }
+          
+          // Método 3: Buscar en todo el contenido de Quill
+          if (!found) {
+            console.log('[Image Edit] Method 3: Searching in Quill contents');
+            const contents = quillEditor.getContents();
+            for (let i = 0; i < contents.length(); i++) {
+              const op = quillEditor.getContents(i, 1);
+              if (op.ops && op.ops[0] && op.ops[0].insert && typeof op.ops[0].insert === 'object' && op.ops[0].insert.image) {
+                const storedImgUrl = op.ops[0].insert.image;
+                // Comparar URLs (pueden tener parámetros diferentes o ser base64)
+                if (storedImgUrl === currentImageUrl || 
+                    storedImgUrl.includes(currentImageUrl.split('/').pop()) || 
+                    currentImageUrl.includes(storedImgUrl.split('/').pop())) {
+                  // Reemplazar esta imagen
+                  console.log('[Image Edit] Method 3: Found image at index', i, 'Replacing...');
+                  quillEditor.deleteText(i, 1);
+                  quillEditor.insertEmbed(i, 'image', croppedImageUrl, 'user');
+                  found = true;
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Método 4: Buscar y reemplazar en el HTML directamente
+          if (!found) {
+            console.log('[Image Edit] Method 4: Searching in HTML');
+            const html = quillEditor.root.innerHTML;
+            console.log('[Image Edit] Current HTML length:', html.length);
+            console.log('[Image Edit] Looking for URL:', currentImageUrl);
+            
+            // Escapar la URL para regex
+            const escapedUrl = currentImageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (html.includes(currentImageUrl)) {
+              console.log('[Image Edit] Method 4: Found exact URL match, replacing...');
+              const newHtml = html.replace(new RegExp(escapedUrl, 'g'), croppedImageUrl);
+              quillEditor.root.innerHTML = newHtml;
+              found = true;
+            } else {
+              // Intentar buscar variaciones de la URL
+              const urlParts = currentImageUrl.split('/');
+              const imageId = urlParts[urlParts.length - 1].split('?')[0]; // Remover query params
+              console.log('[Image Edit] Method 4: Trying to find by image ID:', imageId);
+              
+              if (html.includes(imageId)) {
+                // Buscar el src que contiene este ID
+                const imgRegex = new RegExp(`(<img[^>]*src=["'])([^"']]*${imageId}[^"']*)(["'][^>]*>)`, 'gi');
+                const newHtml = html.replace(imgRegex, function(match, before, src, after) {
+                  console.log('[Image Edit] Method 4: Replacing img src:', src, 'with base64');
+                  return before + croppedImageUrl + after;
+                });
+                quillEditor.root.innerHTML = newHtml;
+                found = true;
+              }
+            }
+          }
+          
+          if (!found) {
+            console.error('[Image Edit] ERROR: Image not found in editor content');
+            console.error('[Image Edit] Original URL:', currentImageUrl);
+            console.error('[Image Edit] Current HTML:', quillEditor.root.innerHTML);
+            alert('Could not find the image to replace. Please try again.');
+            return;
+          }
+          
+          // Actualizar el campo hidden de contenido
+          const content = quillEditor.root.innerHTML;
+          document.getElementById('content').value = content;
+          
+          // Verificar que la imagen base64 esté en el contenido
+          if (content.includes(croppedImageUrl.substring(0, 50))) {
+            console.log('[Image Edit] ✅ Success: Base64 image found in content');
+          } else {
+            console.warn('[Image Edit] ⚠️ Warning: Base64 image may not be in content');
+          }
+        }
+        
+        // Cerrar el modal
+        closeImageEditor();
+        showMessage('Image edited successfully', 'success');
+      }
+
+      // Inicializar event listeners para el editor de imágenes cuando el DOM esté listo
+      function initImageEditorListeners() {
+        const cropBtn = document.getElementById('image-editor-crop-btn');
+        const cancelBtn = document.getElementById('image-editor-cancel-btn');
+        const closeBtn = document.getElementById('image-editor-close-btn');
+        const modal = document.getElementById('image-editor-modal');
+        
+        if (cropBtn) {
+          cropBtn.addEventListener('click', applyImageEdit);
+        }
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', closeImageEditor);
+        }
+        if (closeBtn) {
+          closeBtn.addEventListener('click', closeImageEditor);
+        }
+        if (modal) {
+          // Cerrar modal al hacer click fuera
+          modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+              closeImageEditor();
+            }
+          });
+        }
+      }
+      
+      // Inicializar cuando el DOM esté listo
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initImageEditorListeners);
+      } else {
+        initImageEditorListeners();
+      }
+
+      // ==================== EDITOR DE SLIDESHOW ====================
+      
+      // Función para abrir el editor de slideshow
+      function openSlideshowEditor(block, blockIndex) {
+        currentSlideshowBlock = JSON.parse(JSON.stringify(block)); // Copia profunda
+        currentSlideshowBlockIndex = blockIndex;
+        slideshowImageCroppers = {};
+        
+        const modal = document.getElementById('slideshow-editor-modal');
+        if (!modal) {
+          console.error('Slideshow editor modal not found');
+          return;
+        }
+        
+        // Cargar configuración del bloque
+        const config = currentSlideshowBlock.metadata?.slideshowConfig || {};
+        const showArrows = config.showArrows !== undefined ? config.showArrows : true;
+        const autoplay = config.autoPlay !== undefined ? config.autoPlay : false;
+        const interval = config.slideDuration || 5; // En segundos
+        
+        // Actualizar campos del modal
+        document.getElementById('slideshow-modal-show-arrows').checked = showArrows;
+        document.getElementById('slideshow-modal-autoplay').checked = autoplay;
+        document.getElementById('slideshow-modal-interval').value = interval;
+        
+        // Mostrar modal
+        modal.classList.add('show');
+        
+        // Esperar a que el modal se renderice antes de inicializar
+        setTimeout(() => {
+          // Renderizar preview
+          renderSlideshowPreviewInModal();
+          
+          // Renderizar lista de imágenes
+          renderSlideshowImagesListInModal();
+        }, 100);
+      }
+      
+      // Función para actualizar el preview cuando cambian los settings en el modal
+      function updateSlideshowPreviewInModal() {
+        renderSlideshowPreviewInModal();
+      }
+      
+      // Función para renderizar el preview del slideshow en el modal
+      function renderSlideshowPreviewInModal() {
+        const container = document.getElementById('slideshow-preview-container');
+        if (!container) return;
+        
+        // Obtener slides según el contexto (post o bloque)
+        let images = [];
+        let showArrows = true;
+        let autoplay = false;
+        let interval = 5; // En segundos
+        
+        if (currentPostType === 'slideshow') {
+          // Para posts de tipo slideshow
+          images = slideshowSlides.map(slide => ({ url: slide.imageUrl, caption: slide.caption }));
+          showArrows = document.getElementById('slideshow-modal-show-arrows')?.checked !== false;
+          autoplay = document.getElementById('slideshow-modal-autoplay')?.checked || false;
+          interval = parseInt(document.getElementById('slideshow-modal-interval')?.value) || 5;
+        } else if (currentSlideshowBlock) {
+          // Para bloques de slideshow
+          images = currentSlideshowBlock.metadata?.images || [];
+          showArrows = document.getElementById('slideshow-modal-show-arrows')?.checked !== false;
+          autoplay = document.getElementById('slideshow-modal-autoplay')?.checked || false;
+          interval = parseInt(document.getElementById('slideshow-modal-interval')?.value) || 5;
+        }
+        
+        if (images.length === 0) {
+          container.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">No slides in slideshow. Add slides first.</p>';
+          return;
+        }
+        
+        // El frontend decidirá las dimensiones, aquí usamos un aspect ratio por defecto para el preview
+        const defaultAspectRatio = 800 / 1200; // Aspect ratio por defecto (2:3)
+        
+        // Calcular tamaño del preview (máximo 600px de ancho)
+        const maxPreviewWidth = 600;
+        const previewWidth = Math.min(maxPreviewWidth, container.offsetWidth - 40);
+        const previewHeight = previewWidth * defaultAspectRatio;
+        
+        const slideshowId = `slideshow-preview-${Date.now()}`;
+        
+        let html = `<div class="slideshow-wrapper" id="${slideshowId}" data-auto-play="${autoplay}" data-slide-duration="${interval}" style="position: relative; width: ${previewWidth}px; height: ${previewHeight}px; margin: 0 auto; background: #f0f0f0; border: 1px solid #000;">`;
+        html += `<div class="slideshow-container" style="position: relative; width: 100%; height: 100%; overflow: hidden;">`;
+        
+        images.forEach((img, index) => {
+          const activeClass = index === 0 ? 'active' : '';
+          const imgUrl = img.url ? convertImgurUrl(img.url) : '';
+          const imgStyle = `position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: ${index === 0 ? 'block' : 'none'};`;
+          html += `<div class="slideshow-preview-slide ${activeClass}" data-preview-index="${index}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+            ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" style="${imgStyle}" />` : '<div style="width: 100%; height: 100%; background: #ddd; display: flex; align-items: center; justify-content: center; color: #999;">No image</div>'}
+            ${img.caption ? `<div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; padding: 8px; font-size: 11px; text-align: center;">${escapeHtml(img.caption)}</div>` : ''}
+          </div>`;
+        });
+        
+        html += '</div>';
+        
+        // Añadir flechas de navegación (solo si showArrows está activado y hay más de una imagen)
+        if (images.length > 1 && showArrows) {
+          html += `<button class="slideshow-arrow slideshow-prev" aria-label="Previous" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.7); color: #fff; border: none; padding: 10px 15px; cursor: pointer; font-size: 18px; z-index: 10;">←</button>`;
+          html += `<button class="slideshow-arrow slideshow-next" aria-label="Next" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.7); color: #fff; border: none; padding: 10px 15px; cursor: pointer; font-size: 18px; z-index: 10;">→</button>`;
+        }
+        
+        // Indicadores
+        if (images.length > 1) {
+          html += '<div class="slideshow-indicators" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; z-index: 10;">';
+          images.forEach((img, index) => {
+            const activeClass = index === 0 ? 'active' : '';
+            html += `<button class="slideshow-indicator ${activeClass}" data-slide-index="${index}" aria-label="Go to slide ${index + 1}" style="width: 10px; height: 10px; border-radius: 50%; border: 1px solid #000; background: ${index === 0 ? '#000' : 'transparent'}; cursor: pointer; padding: 0;"></button>`;
+          });
+          html += '</div>';
+        }
+        
+        html += '</div>';
+        container.innerHTML = html;
+        
+        // Inicializar funcionalidad del slideshow (navegación y autoplay)
+        // Convertir segundos a milisegundos para el autoplay
+        const intervalMs = autoplay ? interval * 1000 : 0;
+        initSlideshowPreview(slideshowId, images.length, autoplay, intervalMs, showArrows);
+      }
+      
+      // Función para inicializar el slideshow en el preview
+      function initSlideshowPreview(slideshowId, totalSlides, autoplay, interval, showArrows = true) {
+        const slideshow = document.getElementById(slideshowId);
+        if (!slideshow || totalSlides <= 1) return;
+        
+        const slides = slideshow.querySelectorAll('.slideshow-preview-slide');
+        const prevBtn = slideshow.querySelector('.slideshow-prev');
+        const nextBtn = slideshow.querySelector('.slideshow-next');
+        const indicators = slideshow.querySelectorAll('.slideshow-indicator');
+        
+        // Ocultar flechas si showArrows es false
+        if (!showArrows) {
+          if (prevBtn) prevBtn.style.display = 'none';
+          if (nextBtn) nextBtn.style.display = 'none';
+        }
+        
+        let currentIndex = 0;
+        let autoPlayInterval = null;
+        
+        // Función para mostrar un slide específico
+        function showSlide(index) {
+          slides.forEach((slide, i) => {
+            slide.classList.remove('active');
+            const img = slide.querySelector('img');
+            if (img) img.style.display = i === index ? 'block' : 'none';
+          });
+          
+          indicators.forEach((indicator, i) => {
+            indicator.classList.remove('active');
+            indicator.style.background = i === index ? '#000' : 'transparent';
+          });
+          
+          currentIndex = index;
+        }
+        
+        // Función para siguiente slide
+        function nextSlide() {
+          const nextIndex = (currentIndex + 1) % totalSlides;
+          showSlide(nextIndex);
+        }
+        
+        // Función para slide anterior
+        function prevSlide() {
+          const prevIndex = (currentIndex - 1 + totalSlides) % totalSlides;
+          showSlide(prevIndex);
+        }
+        
+        // Función para iniciar autoplay
+        function startAutoPlay() {
+          if (autoPlayInterval) clearInterval(autoPlayInterval);
+          if (autoplay && interval > 0) {
+            autoPlayInterval = setInterval(nextSlide, interval);
+          }
+        }
+        
+        // Event listeners para flechas
+        if (prevBtn && showArrows) {
+          prevBtn.addEventListener('click', () => {
+            if (autoPlayInterval) clearInterval(autoPlayInterval);
+            prevSlide();
+            if (autoplay) startAutoPlay();
+          });
+        }
+        
+        if (nextBtn && showArrows) {
+          nextBtn.addEventListener('click', () => {
+            if (autoPlayInterval) clearInterval(autoPlayInterval);
+            nextSlide();
+            if (autoplay) startAutoPlay();
+          });
+        }
+        
+        // Event listeners para indicadores
+        indicators.forEach((indicator, index) => {
+          indicator.addEventListener('click', () => {
+            if (autoPlayInterval) clearInterval(autoPlayInterval);
+            showSlide(index);
+            if (autoplay) startAutoPlay();
+          });
+        });
+        
+        // Iniciar autoplay si está habilitado
+        if (autoplay) {
+          startAutoPlay();
+        }
+        
+        // Pausar autoplay al pasar el mouse
+        slideshow.addEventListener('mouseenter', () => {
+          if (autoPlayInterval) clearInterval(autoPlayInterval);
+        });
+        
+        slideshow.addEventListener('mouseleave', () => {
+          if (autoplay) startAutoPlay();
+        });
+      }
+      
+      // Función para renderizar la lista de imágenes en el modal
+      function renderSlideshowImagesListInModal() {
+        const container = document.getElementById('slideshow-images-editor-list');
+        if (!container) return;
+        
+        // Obtener imágenes según el contexto (post o bloque)
+        let images = [];
+        if (currentPostType === 'slideshow') {
+          // Para posts de tipo slideshow
+          images = slideshowSlides.map((slide, index) => ({
+            url: slide.imageUrl,
+            caption: slide.caption || '',
+            index: index
+          }));
+        } else if (currentSlideshowBlock) {
+          // Para bloques de slideshow (legacy)
+          images = (currentSlideshowBlock.metadata?.images || []).map((img, index) => ({
+            url: img.url,
+            caption: img.caption || '',
+            index: index
+          }));
+        }
+        
+        if (images.length === 0) {
+          container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No images in slideshow. Add images first.</p>';
+          return;
+        }
+        
+        // El frontend decidirá las dimensiones, aquí usamos un aspect ratio por defecto para el cropper
+        const defaultAspectRatio = 1200 / 800; // Aspect ratio por defecto (3:2)
+        
+        let html = '';
+        images.forEach((img, index) => {
+          const imgUrl = img.url ? convertImgurUrl(img.url) : '';
+          html += `
+            <div class="slideshow-image-editor-item" data-image-index="${index}" style="border: 1px solid #ddd; padding: 15px; background: #fff;">
+              <div style="margin-bottom: 10px;">
+                <label style="font-size: 11px; text-transform: uppercase; font-weight: bold;">Image ${index + 1}</label>
+              </div>
+              <div style="position: relative; width: 100%; padding-bottom: ${(1 / defaultAspectRatio) * 100}%; background: #f0f0f0; margin-bottom: 10px; border: 1px solid #000; overflow: hidden;">
+                <div id="slideshow-cropper-${index}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+                  ${imgUrl ? `<img id="slideshow-img-${index}" src="${escapeHtml(imgUrl)}" style="max-width: 100%; max-height: 100%;" />` : '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #999;">No image</div>'}
+                </div>
+              </div>
+              <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 10px; color: #666;">Caption</label>
+                <input type="text" class="slideshow-image-caption-input" data-image-index="${index}" value="${escapeHtml(img.caption || '')}" placeholder="Image caption..." style="width: 100%; padding: 6px; border: 1px solid #000; font-size: 12px;" />
+              </div>
+              <button class="slideshow-crop-image-btn" data-image-index="${index}" style="width: 100%; padding: 8px; background: #000; color: #fff; border: 1px solid #000; cursor: pointer; font-size: 10px; text-transform: uppercase;">Crop Image</button>
+            </div>
+          `;
+        });
+        
+        container.innerHTML = html;
+        
+        // Inicializar croppers para cada imagen
+        images.forEach((img, index) => {
+          const imgElement = document.getElementById(`slideshow-img-${index}`);
+          if (imgElement && img.url) {
+            setTimeout(() => {
+              if (slideshowImageCroppers[index]) {
+                slideshowImageCroppers[index].destroy();
+              }
+              slideshowImageCroppers[index] = new Cropper(imgElement, {
+                aspectRatio: defaultAspectRatio,
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 0.8,
+                restore: false,
+                guides: true,
+                center: true,
+                highlight: false,
+                cropBoxMovable: true,
+                cropBoxResizable: true,
+                toggleable: true,
+                minCropBoxWidth: 50,
+                minCropBoxHeight: 50,
+              });
+            }, 100 * (index + 1));
+          }
+        });
+        
+        // Event listeners para captions
+        container.querySelectorAll('.slideshow-image-caption-input').forEach(input => {
+          input.addEventListener('input', (e) => {
+            const imgIndex = parseInt(e.target.dataset.imageIndex);
+            if (currentPostType === 'slideshow') {
+              // Actualizar caption en slideshowSlides
+              if (slideshowSlides[imgIndex]) {
+                slideshowSlides[imgIndex].caption = e.target.value;
+              }
+            } else if (currentSlideshowBlock && currentSlideshowBlock.metadata?.images) {
+              // Actualizar caption en bloque
+              if (currentSlideshowBlock.metadata.images[imgIndex]) {
+                currentSlideshowBlock.metadata.images[imgIndex].caption = e.target.value;
+              }
+            }
+            renderSlideshowPreviewInModal();
+          });
+        });
+        
+        // Event listeners para botones de crop
+        container.querySelectorAll('.slideshow-crop-image-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const imgIndex = parseInt(e.target.dataset.imageIndex);
+            cropSlideshowImageInModal(imgIndex);
+          });
+        });
+      }
+      
+      // Función para recortar una imagen del slideshow en el modal
+      function cropSlideshowImageInModal(imageIndex) {
+        const cropper = slideshowImageCroppers[imageIndex];
+        if (!cropper) {
+          alert('Please wait for the image to load');
+          return;
+        }
+        
+        const canvas = cropper.getCroppedCanvas({
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: 'high',
+        });
+        
+        if (!canvas) {
+          alert('Error creating cropped image');
+          return;
+        }
+        
+        const croppedImageUrl = canvas.toDataURL('image/jpeg', 0.9);
+        
+        // Actualizar la imagen según el contexto
+        if (currentPostType === 'slideshow') {
+          // Actualizar en slideshowSlides
+          if (slideshowSlides[imageIndex]) {
+            slideshowSlides[imageIndex].imageUrl = croppedImageUrl;
+          }
+        } else if (currentSlideshowBlock && currentSlideshowBlock.metadata?.images) {
+          // Actualizar en bloque
+          if (currentSlideshowBlock.metadata.images[imageIndex]) {
+            currentSlideshowBlock.metadata.images[imageIndex].url = croppedImageUrl;
+          }
+        }
+        
+        // Re-renderizar preview y lista
+        renderSlideshowPreviewInModal();
+        renderSlideshowImagesListInModal();
+        
+        showMessage('Image cropped successfully', 'success');
+      }
+      
+      // Función para renderizar el preview del slideshow (legacy, para bloques)
+      function renderSlideshowPreview() {
+        const container = document.getElementById('slideshow-preview-container');
+        if (!container) return;
+        
+        const images = currentSlideshowBlock.metadata?.images || [];
+        const config = currentSlideshowBlock.metadata?.slideshowConfig || {};
+        const width = parseInt(document.getElementById('slideshow-global-width').value) || config.imageWidth || 1200;
+        const height = parseInt(document.getElementById('slideshow-global-height').value) || config.imageHeight || 800;
+        const aspectRatio = height / width;
+        
+        // Actualizar display de dimensiones
+        const dimensionsDisplay = document.getElementById('slideshow-preview-dimensions');
+        if (dimensionsDisplay) {
+          dimensionsDisplay.textContent = `Dimensions: ${width} × ${height}px`;
+        }
+        
+        // Calcular tamaño del preview (máximo 600px de ancho, mantener aspect ratio)
+        const maxPreviewWidth = 600;
+        const previewWidth = Math.min(maxPreviewWidth, container.offsetWidth - 40);
+        const previewHeight = previewWidth * aspectRatio;
+        
+        let html = `<div style="position: relative; width: ${previewWidth}px; height: ${previewHeight}px; margin: 0 auto; background: #f0f0f0;">`;
+        
+        images.forEach((img, index) => {
+          const activeClass = index === 0 ? 'active' : '';
+          const imgUrl = img.url ? convertImgurUrl(img.url) : '';
+          const imgStyle = `position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: ${index === 0 ? 'block' : 'none'};`;
+          html += `<div class="slideshow-preview-slide ${activeClass}" data-preview-index="${index}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+            ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" style="${imgStyle}" />` : '<div style="width: 100%; height: 100%; background: #ddd; display: flex; align-items: center; justify-content: center; color: #999;">No image</div>'}
+            ${img.caption ? `<div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; padding: 8px; font-size: 11px; text-align: center;">${escapeHtml(img.caption)}</div>` : ''}
+          </div>`;
+        });
+        
+        // Añadir controles de navegación
+        if (images.length > 1) {
+          html += `<div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; z-index: 10;">`;
+          images.forEach((img, index) => {
+            const activeClass = index === 0 ? 'active' : '';
+            html += `<button class="slideshow-preview-indicator ${activeClass}" data-preview-index="${index}" style="width: 10px; height: 10px; border-radius: 50%; border: 1px solid #000; background: ${index === 0 ? '#000' : 'transparent'}; cursor: pointer; padding: 0;"></button>`;
+          });
+          html += `</div>`;
+        }
+        
+        html += `</div>`;
+        container.innerHTML = html;
+        
+        // Añadir event listeners para navegación
+        container.querySelectorAll('.slideshow-preview-indicator').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const index = parseInt(e.target.dataset.previewIndex);
+            showPreviewSlide(index);
+          });
+        });
+      }
+      
+      // Función para mostrar un slide específico en el preview
+      function showPreviewSlide(index) {
+        const container = document.getElementById('slideshow-preview-container');
+        if (!container) return;
+        
+        container.querySelectorAll('.slideshow-preview-slide').forEach((slide, i) => {
+          slide.classList.remove('active');
+          const img = slide.querySelector('img');
+          if (img) img.style.display = i === index ? 'block' : 'none';
+        });
+        
+        container.querySelectorAll('.slideshow-preview-indicator').forEach((indicator, i) => {
+          indicator.classList.remove('active');
+          indicator.style.background = i === index ? '#000' : 'transparent';
+        });
+      }
+      
+      // Función para renderizar la lista de imágenes editables
+      function renderSlideshowImagesList() {
+        const container = document.getElementById('slideshow-images-editor-list');
+        if (!container) return;
+        
+        const images = currentSlideshowBlock.metadata?.images || [];
+        const config = currentSlideshowBlock.metadata?.slideshowConfig || {};
+        const width = parseInt(document.getElementById('slideshow-global-width').value) || config.imageWidth || 1200;
+        const height = parseInt(document.getElementById('slideshow-global-height').value) || config.imageHeight || 800;
+        const aspectRatio = height / width;
+        
+        if (images.length === 0) {
+          container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No images in slideshow. Add images first.</p>';
+          return;
+        }
+        
+        let html = '';
+        images.forEach((img, index) => {
+          const imgUrl = img.url ? convertImgurUrl(img.url) : '';
+          html += `
+            <div class="slideshow-image-editor-item" data-image-index="${index}" style="border: 1px solid #ddd; padding: 15px; background: #fff;">
+              <div style="margin-bottom: 10px;">
+                <label style="font-size: 11px; text-transform: uppercase; font-weight: bold;">Image ${index + 1}</label>
+              </div>
+              <div style="position: relative; width: 100%; padding-bottom: ${aspectRatio * 100}%; background: #f0f0f0; margin-bottom: 10px; border: 1px solid #000;">
+                <div id="slideshow-cropper-${index}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+                  ${imgUrl ? `<img id="slideshow-img-${index}" src="${escapeHtml(imgUrl)}" style="max-width: 100%; max-height: 100%;" />` : '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #999;">No image</div>'}
+                </div>
+              </div>
+              <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 10px; color: #666;">Caption</label>
+                <input type="text" class="slideshow-image-caption-input" data-image-index="${index}" value="${escapeHtml(img.caption || '')}" placeholder="Image caption..." style="width: 100%; padding: 6px; border: 1px solid #000; font-size: 12px;" />
+              </div>
+              <button class="slideshow-crop-image-btn" data-image-index="${index}" style="width: 100%; padding: 8px; background: #000; color: #fff; border: 1px solid #000; cursor: pointer; font-size: 10px; text-transform: uppercase;">Crop Image</button>
+            </div>
+          `;
+        });
+        
+        container.innerHTML = html;
+        
+        // Inicializar croppers para cada imagen
+        images.forEach((img, index) => {
+          const imgElement = document.getElementById(`slideshow-img-${index}`);
+          if (imgElement && img.url) {
+            setTimeout(() => {
+              if (slideshowImageCroppers[index]) {
+                slideshowImageCroppers[index].destroy();
+              }
+              slideshowImageCroppers[index] = new Cropper(imgElement, {
+                aspectRatio: aspectRatio,
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 0.8,
+                restore: false,
+                guides: true,
+                center: true,
+                highlight: false,
+                cropBoxMovable: true,
+                cropBoxResizable: true,
+                toggleable: true,
+                minCropBoxWidth: 50,
+                minCropBoxHeight: 50,
+              });
+            }, 100 * (index + 1));
+          }
+        });
+        
+        // Event listeners para captions
+        container.querySelectorAll('.slideshow-image-caption-input').forEach(input => {
+          input.addEventListener('input', (e) => {
+            const imgIndex = parseInt(e.target.dataset.imageIndex);
+            if (currentSlideshowBlock.metadata.images[imgIndex]) {
+              currentSlideshowBlock.metadata.images[imgIndex].caption = e.target.value;
+            }
+          });
+        });
+        
+        // Event listeners para botones de crop
+        container.querySelectorAll('.slideshow-crop-image-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const imgIndex = parseInt(e.target.dataset.imageIndex);
+            cropSlideshowImage(imgIndex);
+          });
+        });
+      }
+      
+      // Función para recortar una imagen del slideshow
+      function cropSlideshowImage(imageIndex) {
+        const cropper = slideshowImageCroppers[imageIndex];
+        if (!cropper) {
+          alert('Please wait for the image to load');
+          return;
+        }
+        
+        const canvas = cropper.getCroppedCanvas({
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: 'high',
+        });
+        
+        if (!canvas) {
+          alert('Error creating cropped image');
+          return;
+        }
+        
+        const croppedImageUrl = canvas.toDataURL('image/jpeg', 0.9);
+        
+        // Actualizar la imagen en el bloque
+        if (currentSlideshowBlock.metadata.images[imageIndex]) {
+          currentSlideshowBlock.metadata.images[imageIndex].url = croppedImageUrl;
+        }
+        
+        // Actualizar el preview y la lista
+        renderSlideshowPreview();
+        renderSlideshowImagesList();
+        
+        showMessage('Image cropped successfully', 'success');
+      }
+      
+      // Función para aplicar dimensiones globales
+      function applySlideshowDimensions() {
+        const width = parseInt(document.getElementById('slideshow-global-width').value);
+        const height = parseInt(document.getElementById('slideshow-global-height').value);
+        
+        if (!width || !height || width < 100 || height < 100) {
+          alert('Please enter valid dimensions (min 100px)');
+          return;
+        }
+        
+        if (!currentSlideshowBlock.metadata) {
+          currentSlideshowBlock.metadata = {};
+        }
+        if (!currentSlideshowBlock.metadata.slideshowConfig) {
+          currentSlideshowBlock.metadata.slideshowConfig = {};
+        }
+        
+        currentSlideshowBlock.metadata.slideshowConfig.imageWidth = width;
+        currentSlideshowBlock.metadata.slideshowConfig.imageHeight = height;
+        
+        // Re-renderizar con nuevas dimensiones
+        renderSlideshowPreview();
+        renderSlideshowImagesList();
+        
+        showMessage('Dimensions applied. Images will be cropped to these dimensions.', 'success');
+      }
+      
+      // Función para guardar cambios del slideshow
+      function saveSlideshowChanges() {
+        if (currentPostType === 'slideshow') {
+          // Guardar cambios para un post de tipo slideshow
+          const autoplay = document.getElementById('slideshow-modal-autoplay').checked;
+          const interval = parseInt(document.getElementById('slideshow-modal-interval').value) || 5000;
+          
+          // Actualizar los campos del editor principal
+          document.getElementById('slideshow-autoplay').checked = autoplay;
+          document.getElementById('slideshow-interval').value = interval;
+          
+          // Cerrar modal
+          closeSlideshowEditor();
+          
+          // Actualizar preview en el editor principal
+          updateSlideshowPreview();
+          
+          showMessage('Slideshow settings saved', 'success');
+        } else if (currentSlideshowBlock && currentSlideshowBlockIndex !== null) {
+          // Guardar cambios para un bloque de slideshow
+          const originalBlock = postBlocks[currentSlideshowBlockIndex];
+          
+          // Actualizar configuración desde el modal
+          const showArrows = document.getElementById('slideshow-modal-show-arrows').checked;
+          const autoplay = document.getElementById('slideshow-modal-autoplay').checked;
+          const interval = parseInt(document.getElementById('slideshow-modal-interval').value) || 5; // En segundos
+          
+          // Asegurar que metadata y slideshowConfig existan
+          if (!originalBlock.metadata) originalBlock.metadata = {};
+          if (!originalBlock.metadata.slideshowConfig) originalBlock.metadata.slideshowConfig = {};
+          
+          // Actualizar configuración
+          originalBlock.metadata.slideshowConfig.showArrows = showArrows;
+          originalBlock.metadata.slideshowConfig.autoPlay = autoplay;
+          originalBlock.metadata.slideshowConfig.slideDuration = interval; // Ya está en segundos
+          
+          // Actualizar imágenes desde el bloque temporal
+          if (currentSlideshowBlock.metadata && currentSlideshowBlock.metadata.images) {
+            originalBlock.metadata.images = JSON.parse(JSON.stringify(currentSlideshowBlock.metadata.images));
+          }
+          
+          // Cerrar modal
+          closeSlideshowEditor();
+          
+          // Re-renderizar bloques
+          renderBlocks();
+          
+          showMessage('Slideshow changes saved', 'success');
+        }
+      }
+      
+      // Función para cerrar el editor de slideshow
+      function closeSlideshowEditor() {
+        const modal = document.getElementById('slideshow-editor-modal');
+        if (modal) {
+          modal.classList.remove('show');
+        }
+        
+        // Destruir todos los croppers
+        Object.values(slideshowImageCroppers).forEach(cropper => {
+          if (cropper) cropper.destroy();
+        });
+        slideshowImageCroppers = {};
+        
+        // Limpiar estado (solo para bloques, no para posts)
+        if (currentSlideshowBlockIndex !== null) {
+          currentSlideshowBlock = null;
+          currentSlideshowBlockIndex = null;
+        }
+      }
+      
+      // Inicializar event listeners del editor de slideshow
+      function initSlideshowEditorListeners() {
+        const modal = document.getElementById('slideshow-editor-modal');
+        const closeBtn = document.getElementById('slideshow-editor-close-btn');
+        const cancelBtn = document.getElementById('slideshow-editor-cancel-btn');
+        const saveBtn = document.getElementById('slideshow-editor-save-btn');
+        
+        if (closeBtn) {
+          closeBtn.addEventListener('click', closeSlideshowEditor);
+        }
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', closeSlideshowEditor);
+        }
+        if (saveBtn) {
+          saveBtn.addEventListener('click', saveSlideshowChanges);
+        }
+        if (modal) {
+          modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+              closeSlideshowEditor();
+            }
+          });
+        }
+        
+        // Los event listeners para autoplay e interval se añaden en renderSlideshowSlides()
+        // para que se actualicen cuando cambian los settings del modal
+      }
+      
+      // Función para inicializar el control interactivo de dimensiones
+      function initDimensionCropper() {
+        const container = document.getElementById('slideshow-dimension-cropper-container');
+        const cropperArea = document.getElementById('slideshow-dimension-cropper');
+        const handle = document.getElementById('slideshow-dimension-cropper-handle');
+        
+        if (!container || !cropperArea || !handle) return;
+        
+        let isDragging = false;
+        let dragType = null; // 'move', 'resize-se', 'resize-sw', 'resize-ne', 'resize-nw'
+        let startX = 0;
+        let startY = 0;
+        let startWidth = 0;
+        let startHeight = 0;
+        let startLeft = 0;
+        let startTop = 0;
+        
+        const containerRect = container.getBoundingClientRect();
+        const maxWidth = containerRect.width;
+        const maxHeight = containerRect.height;
+        
+        // Función para actualizar el cropper visual basado en los valores de width/height
+        function updateDimensionCropper() {
+          const width = parseInt(document.getElementById('slideshow-global-width').value) || 1200;
+          const height = parseInt(document.getElementById('slideshow-global-height').value) || 800;
+          const aspectRatio = height / width;
+          
+          // Calcular tamaño visual (máximo 80% del contenedor)
+          const maxSize = Math.min(maxWidth * 0.8, maxHeight * 0.8);
+          const visualWidth = Math.min(maxSize, width / 2); // Escalar para que sea visible
+          const visualHeight = visualWidth * aspectRatio;
+          
+          if (visualHeight > maxHeight * 0.8) {
+            const adjustedHeight = maxHeight * 0.8;
+            const adjustedWidth = adjustedHeight / aspectRatio;
+            handle.style.width = adjustedWidth + 'px';
+            handle.style.height = adjustedHeight + 'px';
+          } else {
+            handle.style.width = visualWidth + 'px';
+            handle.style.height = visualHeight + 'px';
+          }
+          
+          // Centrar
+          handle.style.left = '50%';
+          handle.style.top = '50%';
+          handle.style.transform = 'translate(-50%, -50%)';
+          
+          // Actualizar display
+          const display = document.getElementById('slideshow-dimension-display');
+          if (display) {
+            display.textContent = `${width} × ${height}`;
+          }
+          
+          // Sincronizar la imagen dentro del recuadro con la imagen de fondo
+          const previewImg = document.getElementById('slideshow-dimension-preview-img');
+          const cropperImg = document.getElementById('slideshow-dimension-cropper-img');
+          const cropperArea = document.getElementById('slideshow-dimension-cropper');
+          
+          if (previewImg && cropperImg && cropperArea && previewImg.src) {
+            // Obtener dimensiones del área y del recuadro
+            const areaRect = cropperArea.getBoundingClientRect();
+            const handleRect = handle.getBoundingClientRect();
+            
+            if (areaRect.width > 0 && areaRect.height > 0) {
+              // Calcular la posición relativa del recuadro
+              const offsetX = handleRect.left - areaRect.left;
+              const offsetY = handleRect.top - areaRect.top;
+              
+              // Calcular porcentajes
+              const percentX = (offsetX / areaRect.width) * 100;
+              const percentY = (offsetY / areaRect.height) * 100;
+              
+              // Calcular escala necesaria para que la imagen dentro del recuadro muestre la porción correcta
+              const handleWidthPercent = (handleRect.width / areaRect.width) * 100;
+              const handleHeightPercent = (handleRect.height / areaRect.height) * 100;
+              
+              const scaleX = 100 / handleWidthPercent;
+              const scaleY = 100 / handleHeightPercent;
+              
+              // Calcular object-position para que muestre la misma porción que el fondo
+              const objectX = 50 - (percentX - 50) * scaleX;
+              const objectY = 50 - (percentY - 50) * scaleY;
+              
+              // Aplicar estilos
+              cropperImg.style.objectPosition = `${objectX}% ${objectY}%`;
+              cropperImg.style.width = `${scaleX * 100}%`;
+              cropperImg.style.height = `${scaleY * 100}%`;
+              cropperImg.style.left = `${-scaleX * 50 + 50}%`;
+              cropperImg.style.top = `${-scaleY * 50 + 50}%`;
+              cropperImg.style.objectFit = 'cover';
+            }
+          }
+        }
+        
+        // Inicializar tamaño
+        updateDimensionCropper();
+        
+        // Función para convertir posición visual a dimensiones reales
+        function visualToRealDimensions(visualWidth, visualHeight) {
+          // El área visual representa las dimensiones, necesitamos escalar
+          const baseScale = 2; // Factor de escala (ajustar según necesidad)
+          const realWidth = Math.round(visualWidth * baseScale);
+          const realHeight = Math.round(visualHeight * baseScale);
+          return { width: Math.max(100, Math.min(5000, realWidth)), height: Math.max(100, Math.min(5000, realHeight)) };
+        }
+        
+        // Función para convertir dimensiones reales a visuales
+        function realToVisualDimensions(realWidth, realHeight) {
+          const baseScale = 2;
+          return { width: realWidth / baseScale, height: realHeight / baseScale };
+        }
+        
+        // Event listeners para handles de redimensionamiento
+        handle.querySelectorAll('.dimension-handle').forEach(h => {
+          h.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            isDragging = true;
+            dragType = h.classList.contains('dimension-handle-se') ? 'resize-se' :
+                      h.classList.contains('dimension-handle-sw') ? 'resize-sw' :
+                      h.classList.contains('dimension-handle-ne') ? 'resize-ne' : 'resize-nw';
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = handle.getBoundingClientRect();
+            startWidth = rect.width;
+            startHeight = rect.height;
+            startLeft = rect.left - containerRect.left;
+            startTop = rect.top - containerRect.top;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+          });
+        });
+        
+        // Event listener para mover
+        handle.addEventListener('mousedown', (e) => {
+          if (e.target === handle || e.target.classList.contains('dimension-handle')) return;
+          isDragging = true;
+          dragType = 'move';
+          startX = e.clientX;
+          startY = e.clientY;
+          const rect = handle.getBoundingClientRect();
+          startLeft = rect.left - containerRect.left;
+          startTop = rect.top - containerRect.top;
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+        });
+        
+        function onMouseMove(e) {
+          if (!isDragging) return;
+          
+          const deltaX = e.clientX - startX;
+          const deltaY = e.clientY - startY;
+          
+          if (dragType === 'move') {
+            // Mover el handle (solo visual, no afecta dimensiones)
+            const newLeft = Math.max(0, Math.min(maxWidth - parseFloat(handle.style.width), startLeft + deltaX));
+            const newTop = Math.max(0, Math.min(maxHeight - parseFloat(handle.style.height), startTop + deltaY));
+            handle.style.left = newLeft + 'px';
+            handle.style.top = newTop + 'px';
+            handle.style.transform = 'none';
+            
+            // Actualizar sincronización de imágenes durante el movimiento
+            requestAnimationFrame(() => {
+              updateDimensionCropper();
+            });
+          } else {
+            // Redimensionar
+            let newWidth = startWidth;
+            let newHeight = startHeight;
+            
+            if (dragType === 'resize-se') {
+              newWidth = Math.max(50, Math.min(maxWidth, startWidth + deltaX));
+              newHeight = Math.max(50, Math.min(maxHeight, startHeight + deltaY));
+            } else if (dragType === 'resize-sw') {
+              newWidth = Math.max(50, Math.min(maxWidth, startWidth - deltaX));
+              newHeight = Math.max(50, Math.min(maxHeight, startHeight + deltaY));
+            } else if (dragType === 'resize-ne') {
+              newWidth = Math.max(50, Math.min(maxWidth, startWidth + deltaX));
+              newHeight = Math.max(50, Math.min(maxHeight, startHeight - deltaY));
+            } else if (dragType === 'resize-nw') {
+              newWidth = Math.max(50, Math.min(maxWidth, startWidth - deltaX));
+              newHeight = Math.max(50, Math.min(maxHeight, startHeight - deltaY));
+            }
+            
+            // Mantener aspect ratio si se presiona Shift
+            if (e.shiftKey) {
+              const aspectRatio = startHeight / startWidth;
+              if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                newHeight = newWidth * aspectRatio;
+              } else {
+                newWidth = newHeight / aspectRatio;
+              }
+            }
+            
+            handle.style.width = newWidth + 'px';
+            handle.style.height = newHeight + 'px';
+            
+            // Convertir a dimensiones reales y actualizar inputs
+            const realDims = visualToRealDimensions(newWidth, newHeight);
+            document.getElementById('slideshow-global-width').value = realDims.width;
+            document.getElementById('slideshow-global-height').value = realDims.height;
+            
+            // Actualizar display
+            const display = document.getElementById('slideshow-dimension-display');
+            if (display) {
+              display.textContent = `${realDims.width} × ${realDims.height}`;
+            }
+            
+            // Actualizar preview y lista
+            if (currentSlideshowBlock) {
+              renderSlideshowPreview();
+              renderSlideshowImagesList();
+            }
+          }
+        }
+        
+        function onMouseUp() {
+          isDragging = false;
+          dragType = null;
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          
+          // Actualizar sincronización de imágenes después de mover/redimensionar
+          updateDimensionCropper();
+          
+          // Actualizar preview y lista después de terminar el movimiento
+          if (currentSlideshowBlock) {
+            renderSlideshowPreview();
+            renderSlideshowImagesList();
+          }
+        }
+        
+        // Hacer la función updateDimensionCropper accesible globalmente
+        window.updateDimensionCropper = updateDimensionCropper;
+      }
+      
+      // Inicializar cuando el DOM esté listo
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSlideshowEditorListeners);
+      } else {
+        initSlideshowEditorListeners();
+      }
+
+
+      // Event listeners para búsqueda y filtros
+      document.getElementById("search-input").addEventListener("input", function(e) {
+        currentFilters.search = e.target.value;
+        loadPosts(1);
+      });
+
+      document.getElementById("filter-published").addEventListener("change", function(e) {
+        currentFilters.published = e.target.value;
+        loadPosts(1);
+      });
+
+      document.getElementById("filter-tag").addEventListener("change", function(e) {
+        currentFilters.tagId = e.target.value;
+        loadPosts(1);
+      });
+
+      document.getElementById("filter-section").addEventListener("change", function(e) {
+        currentFilters.sectionId = e.target.value;
+        loadPosts(1);
+      });
+
+      document.getElementById("clear-filters").addEventListener("click", function() {
+        currentFilters = { search: "", published: "", tagId: "", sectionId: "" };
+        document.getElementById("search-input").value = "";
+        document.getElementById("filter-published").value = "";
+        document.getElementById("filter-tag").value = "";
+        document.getElementById("filter-section").value = "";
+        loadPosts(1);
+      });
+
+      // Event listeners para crear sección
+      document.getElementById("create-section-btn")?.addEventListener("click", openCreateSectionModal);
+      document.getElementById("create-section-modal-close-btn")?.addEventListener("click", closeCreateSectionModal);
+      document.getElementById("create-section-cancel-btn")?.addEventListener("click", closeCreateSectionModal);
+      document.getElementById("create-section-form")?.addEventListener("submit", createSection);
+      
+      // Cerrar modal al hacer clic fuera
+      document.getElementById("create-section-modal")?.addEventListener("click", function(e) {
+        if (e.target.id === "create-section-modal") {
+          closeCreateSectionModal();
+        }
+      });
+
+      // Event listener para añadir tags
+      document.getElementById("tag-input").addEventListener("keypress", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addTag();
+        }
+      });
+
+      // Event listener para el selector de sección
+      document.getElementById("section").addEventListener("change", async function() {
+        console.log("[Section Change] Section changed to:", this.value);
+        console.log("[Section Change] editingPostId:", editingPostId);
+        updateSectionTypeInfo();
+        // Cargar template de la sección si existe
+        const sectionId = this.value;
+        if (sectionId && !editingPostId) {
+          // Solo cargar template si estamos creando un nuevo post (no editando)
+          // Limpiar bloques existentes primero para que el template pueda cargarse
+          console.log("[Section Change] Clearing existing blocks before loading template...");
+          postBlocks = [];
+          renderBlocks();
+          console.log("[Section Change] Loading template for new post...");
+          await loadSectionTemplate(sectionId);
+        } else {
+          console.log("[Section Change] Skipping template load - editingPostId:", editingPostId, "sectionId:", sectionId);
+        }
+      });
+      
+      // Función para cargar el template de una sección
+      async function loadSectionTemplate(sectionId) {
+        try {
+          console.log("[Load Template] Loading template for section:", sectionId);
+          console.log("[Load Template] Current postBlocks length:", postBlocks.length);
+          
+          const response = await fetch(`${API_URL}/sections/${sectionId}/template`, {
+            credentials: 'include',
+          });
+          
+          console.log("[Load Template] Response status:", response.status);
+          
+          if (!response.ok) {
+            console.log("[Load Template] No template found or error:", response.status);
+            const errorText = await response.text();
+            console.log("[Load Template] Error response:", errorText);
+            return;
+          }
+          
+          const data = await response.json();
+          console.log("[Load Template] Template data received:", data);
+          
+          if (data.blockTemplate && data.blockTemplate.blocks && Array.isArray(data.blockTemplate.blocks)) {
+            console.log("[Load Template] Template found with", data.blockTemplate.blocks.length, "blocks");
+            
+            // Generar bloques desde el template
+            const templateBlocks = data.blockTemplate.blocks.map((blockDef, index) => {
+              const baseBlock = {
+                type: blockDef.type,
+                content: "",
+                order: index,
+                metadata: {
+                  required: blockDef.required || false,
+                  width: blockDef.width || "full",
+                },
+              };
+              
+              // Configuración específica por tipo de bloque
+              switch (blockDef.type) {
+                case "slideshow":
+                  baseBlock.content = "";
+                  baseBlock.metadata = {
+                    ...baseBlock.metadata,
+                    images: [],
+                    slideshowConfig: blockDef.settings || {
+                      showArrows: true,
+                      autoplay: false,
+                      interval: 3,
+                    },
+                  };
+                  break;
+                case "text":
+                  baseBlock.content = "";
+                  break;
+                case "image":
+                  baseBlock.content = "";
+                  baseBlock.metadata = {
+                    ...baseBlock.metadata,
+                    caption: "",
+                  };
+                  break;
+                case "video":
+                  baseBlock.content = "";
+                  break;
+                case "embed_instagram":
+                case "embed_soundcloud":
+                  baseBlock.content = "";
+                  break;
+              }
+              
+              return baseBlock;
+            });
+            
+            console.log("[Load Template] Generated template blocks:", templateBlocks);
+            
+            // Solo reemplazar bloques si no hay bloques existentes
+            if (postBlocks.length === 0) {
+              postBlocks = templateBlocks;
+              console.log("[Load Template] Setting postBlocks, new length:", postBlocks.length);
+              renderBlocks();
+              console.log("[Load Template] Template blocks loaded and rendered:", postBlocks.length);
+            } else {
+              console.log("[Load Template] Skipping template load - postBlocks already has", postBlocks.length, "blocks");
+            }
+          } else {
+            console.log("[Load Template] No template blocks defined (freedom mode)");
+            console.log("[Load Template] blockTemplate value:", data.blockTemplate);
+          }
+        } catch (err) {
+          console.error("[Load Template] Error loading template:", err);
+          console.error("[Load Template] Error stack:", err.stack);
+        }
+      }
+
+      // Inicializar: verificar auth y cargar datos
+      // Usar una función async auto-ejecutada con manejo de errores
+      (async () => {
+        try {
+          console.log("[Init] Starting initialization...");
+          const authenticated = await checkAuth();
+          if (authenticated) {
+            console.log("[Init] Authenticated, loading data...");
+            await loadTags();
+            await loadSections();
+            loadPosts(1);
+            console.log("[Init] ✅ Initialization complete");
+          } else {
+            console.log("[Init] ⚠️ Not authenticated or initialization failed");
+            // No hacer nada más, checkAuth ya maneja las redirecciones
+          }
+        } catch (err) {
+          console.error("[Init] ❌ Error during initialization:", err);
+          // No redirigir aquí, checkAuth ya maneja las redirecciones de autenticación
+          // Solo loguear el error para debugging
+        }
+      })();
+
+      // ==================== AUDIT LOGS ====================
+      let auditCurrentPage = 1;
+      let auditFilters = {
+        action: "",
+        resource: "",
+        startDate: "",
+        endDate: "",
+      };
+
+      // Abrir modal de audit logs
+      function openAuditLogsModal() {
+        const modal = document.getElementById("audit-logs-modal");
+        if (modal) {
+          modal.style.display = "block";
+          loadAuditStats();
+          loadAuditLogs(1);
+        }
+      }
+
+      // Cerrar modal de audit logs
+      function closeAuditLogsModal() {
+        const modal = document.getElementById("audit-logs-modal");
+        if (modal) {
+          modal.style.display = "none";
+        }
+      }
+
+      // Cargar estadísticas de auditoría
+      async function loadAuditStats() {
+        try {
+          const res = await fetch(`${API_URL}/audit-logs/stats`, {
+            credentials: "include",
+          });
+          if (res.ok) {
+            const stats = await res.json();
+            document.getElementById("audit-total-logs").textContent = stats.totalLogs || 0;
+            document.getElementById("audit-logs-24h").textContent = stats.logsLast24h || 0;
+          }
+        } catch (err) {
+          console.error("Error loading audit stats:", err);
+        }
+      }
+
+      // Cargar logs de auditoría
+      async function loadAuditLogs(page = 1) {
+        try {
+          auditCurrentPage = page;
+          const params = new URLSearchParams({
+            page: page.toString(),
+            limit: "50",
+          });
+          
+          if (auditFilters.action) params.append("action", auditFilters.action);
+          if (auditFilters.resource) params.append("resource", auditFilters.resource);
+          if (auditFilters.startDate) params.append("startDate", auditFilters.startDate);
+          if (auditFilters.endDate) params.append("endDate", auditFilters.endDate);
+          
+          const res = await fetch(`${API_URL}/audit-logs?${params.toString()}`, {
+            credentials: "include",
+          });
+          
+          if (res.status === 403) {
+            document.getElementById("audit-logs-list").innerHTML = 
+              "<p style='padding: 20px; text-align: center; color: #666666;'>Only administrators can view audit logs.</p>";
+            return;
+          }
+          
+          if (!res.ok) throw new Error("Failed to load audit logs");
+          
+          const data = await res.json();
+          renderAuditLogs(data.logs || []);
+          renderAuditPagination(data.pagination);
+        } catch (err) {
+          document.getElementById("audit-logs-list").innerHTML = 
+            `<p style="padding: 20px; text-align: center; color: #000000; border: 1px solid #000000;">Error loading audit logs: ${err.message}</p>`;
+        }
+      }
+
+      // Renderizar logs de auditoría
+      function renderAuditLogs(logs) {
+        const container = document.getElementById("audit-logs-list");
+        
+        if (!logs || logs.length === 0) {
+          container.innerHTML = "<p style='padding: 20px; text-align: center; color: #666666;'>No audit logs found.</p>";
+          return;
+        }
+
+        container.innerHTML = logs.map(log => {
+          const date = new Date(log.createdAt).toLocaleString();
+          const userEmail = log.user ? log.user.email : "System";
+          const siteName = log.site ? log.site.name : "-";
+          const details = log.details ? JSON.stringify(log.details, null, 2) : "";
+          
+          return `
+            <div style="padding: 15px; border-bottom: 1px solid #000000; background: ${log.action.includes('failed') ? '#fff5f5' : '#ffffff'};">
+              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                <div style="flex: 1;">
+                  <div style="font-weight: 500; color: #000000; margin-bottom: 5px;">
+                    ${escapeHtml(log.action)} ${log.resource ? `on ${escapeHtml(log.resource)}` : ""}
+                    ${log.resourceId ? `#${log.resourceId}` : ""}
+                  </div>
+                  <div style="font-size: 11px; color: #666666; text-transform: uppercase; letter-spacing: 0.5px;">
+                    User: ${escapeHtml(userEmail)} | Site: ${escapeHtml(siteName)} | ${date}
+                  </div>
+                  ${log.ipAddress ? `<div style="font-size: 10px; color: #999999; margin-top: 5px;">IP: ${escapeHtml(log.ipAddress)}</div>` : ""}
+                </div>
+              </div>
+              ${details ? `<details style="margin-top: 10px;"><summary style="cursor: pointer; font-size: 11px; color: #666666; text-transform: uppercase; letter-spacing: 0.5px;">Details</summary><pre style="margin-top: 10px; padding: 10px; background: #f5f5f5; border: 1px solid #000000; font-size: 11px; overflow-x: auto;">${escapeHtml(details)}</pre></details>` : ""}
+            </div>
+          `;
+        }).join("");
+      }
+
+      // Renderizar paginación de audit logs
+      function renderAuditPagination(pagination) {
+        const container = document.getElementById("audit-pagination");
+        if (!pagination || pagination.totalPages <= 1) {
+          container.innerHTML = "";
+          return;
+        }
+
+        let html = "";
+        if (pagination.page > 1) {
+          html += `<button onclick="loadAuditLogs(${pagination.page - 1})" style="padding: 8px 16px; background: #ffffff; color: #000000; border: 1px solid #000000; border-radius: 0; cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Previous</button>`;
+        }
+        html += `<span style="padding: 0 15px; font-size: 12px; color: #666666;">Page ${pagination.page} of ${pagination.totalPages}</span>`;
+        if (pagination.page < pagination.totalPages) {
+          html += `<button onclick="loadAuditLogs(${pagination.page + 1})" style="padding: 8px 16px; background: #000000; color: #ffffff; border: 1px solid #000000; border-radius: 0; cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Next</button>`;
+        }
+
+        container.innerHTML = html;
+      }
+      
+      // Hacer loadAuditLogs disponible globalmente para onclick
+      window.loadAuditLogs = loadAuditLogs;
+
+      // Event listeners para filtros de audit logs
+      document.getElementById("audit-apply-filters")?.addEventListener("click", function() {
+        auditFilters.action = document.getElementById("audit-filter-action").value;
+        auditFilters.resource = document.getElementById("audit-filter-resource").value;
+        auditFilters.startDate = document.getElementById("audit-filter-start-date").value;
+        auditFilters.endDate = document.getElementById("audit-filter-end-date").value;
+        loadAuditLogs(1);
+      });
+
+      document.getElementById("audit-clear-filters")?.addEventListener("click", function() {
+        document.getElementById("audit-filter-action").value = "";
+        document.getElementById("audit-filter-resource").value = "";
+        document.getElementById("audit-filter-start-date").value = "";
+        document.getElementById("audit-filter-end-date").value = "";
+        auditFilters = {
+          action: "",
+          resource: "",
+          startDate: "",
+          endDate: "",
+        };
+        loadAuditLogs(1);
+      });
+
+      // Event listener para cerrar el modal de audit logs
+      document.getElementById("audit-logs-modal-close-btn")?.addEventListener("click", closeAuditLogsModal);
+
+      // Cerrar modal al hacer clic fuera de él
+      document.getElementById("audit-logs-modal")?.addEventListener("click", function(e) {
+        if (e.target.id === "audit-logs-modal") {
+          closeAuditLogsModal();
+        }
+      });
+    </script>
+  </body>
+</html>
+
+<!-- Deploy timestamp: 1768098220 -->
