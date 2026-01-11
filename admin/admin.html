@@ -2414,7 +2414,7 @@
       // Helper function to get auth headers
       function getAuthHeaders(customHeaders = {}) {
         const headers = { "Content-Type": "application/json", ...customHeaders };
-        const token = localStorage.getItem("jwt_token");
+        const token = localStorage.getItem("auth_token");
         if (token) {
           headers["Authorization"] = `Bearer ${token}`;
         }
@@ -2445,7 +2445,7 @@
         try {
           console.log("[checkAuth] Checking authentication...");
           const headers = getAuthHeaders();
-          const token = localStorage.getItem("jwt_token");
+          const token = localStorage.getItem("auth_token");
           if (token) {
             console.log("[checkAuth] JWT token found in localStorage");
           } else {
