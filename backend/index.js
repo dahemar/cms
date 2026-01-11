@@ -140,47 +140,57 @@ function makeSafeSessionStore(store) {
     );
   };
 
-  const wrap = (methodName, defaultValue) => {
-    return (...args) => {
-      const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+  // IMPORTANT: do NOT return a plain object. express-session expects the store
+  // to behave like a Store/EventEmitter (e.g. it may call store.on()).
+  // Using a Proxy preserves the original instance/prototype while wrapping
+  // only the methods we care about.
+  const wrappedMethods = new Set(['get', 'set', 'destroy', 'touch', 'all', 'length', 'clear']);
 
-      const handleError = (err) => {
-        if (shouldSwallow(err)) {
-          console.warn(`[Session Store] ⚠️ ${methodName} failed (swallowed):`, err?.message || err);
-          if (callback) return callback(null, defaultValue);
-          return;
-        }
-        if (callback) return callback(err);
-      };
+  const handler = {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof prop === 'string' && wrappedMethods.has(prop) && typeof value === 'function') {
+        return (...args) => {
+          const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
 
-      try {
-        const maybePromise = store[methodName]?.(...args, (err, value) => {
-          if (err) return handleError(err);
-          if (callback) return callback(null, value);
-        });
+          const defaultValue =
+            prop === 'get' ? null :
+            prop === 'all' ? {} :
+            prop === 'length' ? 0 :
+            undefined;
 
-        if (maybePromise && typeof maybePromise.then === 'function') {
-          maybePromise
-            .then((value) => {
-              if (callback) callback(null, value);
-            })
-            .catch(handleError);
-        }
-      } catch (err) {
-        handleError(err);
+          const handleError = (err) => {
+            if (shouldSwallow(err)) {
+              console.warn(`[Session Store] ⚠️ ${prop} failed (swallowed):`, err?.message || err);
+              if (callback) return callback(null, defaultValue);
+              return;
+            }
+            if (callback) return callback(err);
+          };
+
+          try {
+            const maybePromise = value.call(target, ...args, (err, result) => {
+              if (err) return handleError(err);
+              if (callback) return callback(null, result);
+            });
+
+            if (maybePromise && typeof maybePromise.then === 'function') {
+              maybePromise
+                .then((result) => {
+                  if (callback) callback(null, result);
+                })
+                .catch(handleError);
+            }
+          } catch (err) {
+            handleError(err);
+          }
+        };
       }
-    };
+      return value;
+    },
   };
 
-  return {
-    get: wrap('get', null),
-    set: wrap('set', undefined),
-    destroy: wrap('destroy', undefined),
-    touch: wrap('touch', undefined),
-    all: wrap('all', {}),
-    length: wrap('length', 0),
-    clear: wrap('clear', undefined),
-  };
+  return new Proxy(store, handler);
 }
 
 // Función para obtener Prisma de forma lazy (singleton pattern con global)
