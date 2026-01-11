@@ -2345,6 +2345,19 @@
             sites = await res.json();
             console.log("[Load Sites] Sites received:", sites.length, sites);
             
+            // En producción, filtrar para mostrar solo el sitio de React (frontend-generic-react)
+            if (!isLocalhost) {
+              sites = sites.filter(site => {
+                // Filtrar por frontend profile o slug que contenga "react"
+                const hasReactProfile = site.frontendProfile?.name?.includes('frontend-generic-react') || 
+                                       site.frontendProfile?.name?.includes('react');
+                const hasReactSlug = site.slug?.toLowerCase().includes('react') || 
+                                    site.slug?.toLowerCase().includes('sympaathy');
+                return hasReactProfile || hasReactSlug;
+              });
+              console.log("[Load Sites] Filtered sites (production - React only):", sites.length, sites);
+            }
+            
             // Si es admin, mostrar selector de sitios (solo si no está en modo usuario)
             if (isAdmin && sites.length > 0) {
               // SIEMPRE establecer currentSiteId, incluso si está en modo usuario
