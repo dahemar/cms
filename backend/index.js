@@ -308,27 +308,6 @@ let prisma = null;
     console.log("[Session Store] ⚠️ WARNING: Sessions will not persist between serverless invocations!");
     sessionStore = undefined;
   }
-} catch (error) {
-  console.error("[Prisma] ❌ Error initializing PrismaClient:", error);
-  console.error("[Prisma] Error message:", error.message);
-  console.error("[Prisma] Error code:", error.code);
-  console.error("[Prisma] DATABASE_URL present:", !!process.env.DATABASE_URL);
-  console.error("[Prisma] Stack:", error.stack);
-  // Intentar inicializar Prisma sin modificar la URL si falló
-  try {
-    console.log("[Prisma] ⚠️ Retrying with original DATABASE_URL...");
-    prisma = new PrismaClient({
-      log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
-    });
-    console.log("[Prisma] ✅ PrismaClient initialized with fallback");
-  } catch (fallbackError) {
-    console.error("[Prisma] ❌ Fallback initialization also failed:", fallbackError.message);
-    // No lanzar el error aquí, dejar que el servidor intente iniciar
-    // Prisma se inicializará cuando se necesite
-    prisma = null;
-    sessionStore = undefined;
-  }
-}
 
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
 // We keep a DB mirror so sites can reference a profile via FK, but disk remains the source of truth.
@@ -725,15 +704,18 @@ app.get("/api/pages", (req, res) => {
     { id: 2, title: "About", body: "This is a demo CMS" },
   ]);
 });
+
+// POST /api/admin/update-sites-and-user - Endpoint temporal para actualizar sitios y crear usuario
+app.post("/api/admin/update-sites-and-user", adminRateLimiter, requireAuth, async (req, res) => {
   try {
     // Solo permitir a admins
     const userId = req.userId;
-    const user = await prisma.user.findUnique({
+    const adminUser = await getPrisma()?.user.findUnique({
       where: { id: userId },
       select: { isAdmin: true }
     });
 
-    if (!user || !user.isAdmin) {
+    if (!adminUser || !adminUser.isAdmin) {
       return res.status(403).json({ error: "Only admins can execute this action" });
     }
 
@@ -741,8 +723,13 @@ app.get("/api/pages", (req, res) => {
 
     const bcrypt = require("bcrypt");
 
+    const prismaInstance = getPrisma();
+    if (!prismaInstance) {
+      return res.status(500).json({ error: "Database not available" });
+    }
+
     // 1. Actualizar nombre del sitio "test-frontend" a "cineclube"
-    const testFrontendSite = await prisma.site.findFirst({
+    const testFrontendSite = await prismaInstance.site.findFirst({
       where: {
         OR: [
           { slug: "test-frontend" },
@@ -754,7 +741,7 @@ app.get("/api/pages", (req, res) => {
     let results = {};
 
     if (testFrontendSite) {
-      const updatedSite1 = await prisma.site.update({
+      const updatedSite1 = await prismaInstance.site.update({
         where: { id: testFrontendSite.id },
         data: { name: "cineclube" }
       });
@@ -766,7 +753,7 @@ app.get("/api/pages", (req, res) => {
     }
 
     // 2. Actualizar nombre del sitio "react-frontend" a "sympaathy"
-    const reactFrontendSite = await prisma.site.findFirst({
+    const reactFrontendSite = await prismaInstance.site.findFirst({
       where: {
         OR: [
           { slug: "react-frontend" },
@@ -777,7 +764,7 @@ app.get("/api/pages", (req, res) => {
     });
 
     if (reactFrontendSite) {
-      const updatedSite2 = await prisma.site.update({
+      const updatedSite2 = await prismaInstance.site.update({
         where: { id: reactFrontendSite.id },
         data: { name: "sympaathy" }
       });
@@ -789,7 +776,7 @@ app.get("/api/pages", (req, res) => {
     }
 
     // 3. Buscar el sitio cineclube (por ID 3 o por nombre)
-    const cineclubeSite = await prisma.site.findFirst({
+    const cineclubeSite = await prismaInstance.site.findFirst({
       where: {
         OR: [
           { id: 3 },
@@ -805,15 +792,15 @@ app.get("/api/pages", (req, res) => {
 
     // 4. Crear o actualizar usuario neuzaaneuza@gmail.com
     const userEmail = "neuzaaneuza@gmail.com";
-    let user = await prisma.user.findUnique({
+    let existingUser = await prismaInstance.user.findUnique({
       where: { email: userEmail }
     });
 
-    if (!user) {
+    if (!existingUser) {
       const password = "neuzaneuza";
       const hashedPassword = await bcrypt.hash(password, 10);
       
-      user = await prisma.user.create({
+      existingUser = await prismaInstance.user.create({
         data: {
           email: userEmail,
           password: hashedPassword,
@@ -821,13 +808,13 @@ app.get("/api/pages", (req, res) => {
           emailVerified: false
         }
       });
-      results.user = { created: true, email: userEmail, id: user.id };
+      results.user = { created: true, email: userEmail, id: existingUser.id };
       console.log(`✅ Created user: ${userEmail}`);
     } else {
       const password = "neuzaneuza";
       const hashedPassword = await bcrypt.hash(password, 10);
-      user = await prisma.user.update({
-        where: { id: user.id },
+      existingUser = await prismaInstance.user.update({
+        where: { id: existingUser.id },
         data: {
           password: hashedPassword,
           isAdmin: false
@@ -838,7 +825,7 @@ app.get("/api/pages", (req, res) => {
     }
 
     // 5. Asignar usuario al sitio cineclube
-    await prisma.userSite.upsert({
+    await prismaInstance.userSite.upsert({
       where: {
         userId_siteId: {
           userId: user.id,
@@ -846,7 +833,7 @@ app.get("/api/pages", (req, res) => {
         }
       },
       create: {
-        userId: user.id,
+        userId: existingUser.id,
         siteId: cineclubeSite.id
       },
       update: {}
@@ -4927,7 +4914,7 @@ app.get("/audit-logs", adminRateLimiter, requireAuth, async (req, res) => {
     const skip = (page - 1) * limit;
     const action = req.query.action || null;
     const resource = req.query.resource || null;
-    const userId = req.query.userId ? parseInt(req.query.userId) : null;
+    const queryUserId = req.query.userId ? parseInt(req.query.userId) : null;
     const siteId = req.query.siteId ? parseInt(req.query.siteId) : null;
     const startDate = req.query.startDate ? new Date(req.query.startDate) : null;
     const endDate = req.query.endDate ? new Date(req.query.endDate) : null;
@@ -4943,8 +4930,8 @@ app.get("/audit-logs", adminRateLimiter, requireAuth, async (req, res) => {
       where.resource = resource;
     }
     
-    if (userId) {
-      where.userId = userId;
+    if (queryUserId) {
+      where.userId = queryUserId;
     }
     
     if (siteId) {
