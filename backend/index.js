@@ -103,6 +103,10 @@ console.log("[Init] Creating Express app...");
 const app = express();
 console.log("[Init] ✅ Express app created");
 
+// Vercel runs behind a proxy/CDN. Trust the first proxy hop so req.ip, secure cookies,
+// and other proxy-aware behaviors work as expected.
+app.set('trust proxy', 1);
+
 // Configuración de entorno (debe estar antes de usarse)
 const isProduction = process.env.NODE_ENV === "production";
 
