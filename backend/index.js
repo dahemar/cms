@@ -124,6 +124,65 @@ const isProduction = process.env.NODE_ENV === "production";
 
 let sessionStore;
 
+// Wrap a session store so transient store errors (e.g. Redis client closed in serverless)
+// do not hard-fail the entire request with a 500 from express-session.
+function makeSafeSessionStore(store) {
+  if (!store) return undefined;
+
+  const shouldSwallow = (err) => {
+    const msg = err?.message || '';
+    return (
+      msg.includes('The client is closed') ||
+      msg.includes('ClientClosedError') ||
+      msg.includes('Socket closed') ||
+      msg.includes('ECONNRESET') ||
+      msg.includes('ETIMEDOUT')
+    );
+  };
+
+  const wrap = (methodName, defaultValue) => {
+    return (...args) => {
+      const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+
+      const handleError = (err) => {
+        if (shouldSwallow(err)) {
+          console.warn(`[Session Store] ⚠️ ${methodName} failed (swallowed):`, err?.message || err);
+          if (callback) return callback(null, defaultValue);
+          return;
+        }
+        if (callback) return callback(err);
+      };
+
+      try {
+        const maybePromise = store[methodName]?.(...args, (err, value) => {
+          if (err) return handleError(err);
+          if (callback) return callback(null, value);
+        });
+
+        if (maybePromise && typeof maybePromise.then === 'function') {
+          maybePromise
+            .then((value) => {
+              if (callback) callback(null, value);
+            })
+            .catch(handleError);
+        }
+      } catch (err) {
+        handleError(err);
+      }
+    };
+  };
+
+  return {
+    get: wrap('get', null),
+    set: wrap('set', undefined),
+    destroy: wrap('destroy', undefined),
+    touch: wrap('touch', undefined),
+    all: wrap('all', {}),
+    length: wrap('length', 0),
+    clear: wrap('clear', undefined),
+  };
+}
+
 // Función para obtener Prisma de forma lazy (singleton pattern con global)
 function getPrisma() {
   // Usar global para persistir entre invocaciones en la misma lambda
@@ -492,7 +551,7 @@ const sessionSecret = process.env.SESSION_SECRET || (() => {
 app.use(
   session({
     secret: sessionSecret,
-    store: sessionStore || undefined, // Usar Prisma para almacenamiento persistente (fallback a memoria si falla)
+    store: makeSafeSessionStore(sessionStore) || undefined, // Persistente si existe; no rompe requests ante fallos transitorios
     resave: false,
     saveUninitialized: false,
     cookie: {
