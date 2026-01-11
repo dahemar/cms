@@ -2497,18 +2497,18 @@
           
           // Configurar el email del usuario
           const userInfoElement = document.getElementById("user-info");
-          if (isAdmin) {
-            // Si es admin, hacer el email clickeable para abrir audit logs
-            userInfoElement.innerHTML = `<span style="cursor: pointer; text-decoration: underline;" id="user-email-clickable">${data.user.email}</span>`;
-            // Remover listeners anteriores si existen
-            const newUserInfoElement = document.getElementById("user-info");
-            const clickableEmail = document.getElementById("user-email-clickable");
-            if (clickableEmail) {
-              clickableEmail.onclick = function(e) {
-                e.stopPropagation();
-                openAuditLogsModal();
-              };
-            }
+          if (userInfoElement) {
+            if (isAdmin) {
+              // Si es admin, hacer el email clickeable para abrir audit logs
+              userInfoElement.innerHTML = `<span style="cursor: pointer; text-decoration: underline;" id="user-email-clickable">${data.user.email}</span>`;
+              // Remover listeners anteriores si existen
+              const clickableEmail = document.getElementById("user-email-clickable");
+              if (clickableEmail) {
+                clickableEmail.onclick = function(e) {
+                  e.stopPropagation();
+                  openAuditLogsModal();
+                };
+              }
             // Mostrar botón de vista de usuario solo para admins
             const viewUserModeBtn = document.getElementById("view-user-mode-btn");
             if (viewUserModeBtn) {
@@ -2521,12 +2521,13 @@
                 applyUserModeView(true);
               }
             }
-            // Mostrar/ocultar botones de crear/eliminar secciones según si es admin y no está en modo usuario
-            updateSectionManagerAdminControls();
-          } else {
-            userInfoElement.textContent = data.user.email;
-            // Para usuarios no admin, ocultar controles de admin
-            updateSectionManagerAdminControls();
+              // Mostrar/ocultar botones de crear/eliminar secciones según si es admin y no está en modo usuario
+              updateSectionManagerAdminControls();
+            } else {
+              userInfoElement.textContent = data.user.email;
+              // Para usuarios no admin, ocultar controles de admin
+              updateSectionManagerAdminControls();
+            }
           }
           
           // No mostrar la sección de audit logs en la vista principal (solo en el modal)
