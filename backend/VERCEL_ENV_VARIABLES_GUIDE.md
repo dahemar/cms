@@ -72,14 +72,17 @@ Deberías ver campos como:
 
 ### Variable 1:
 - **Key**: `UPSTASH_REDIS_REST_URL`
-- **Value**: `https://liberal-garfish-14371.upstash.io`
+- **Value**: `https://<your-upstash-rest-url>`
 - **Environment**: Selecciona "Production" (y "Preview" si quieres)
 
 ### Variable 2:
 - **Key**: `UPSTASH_REDIS_REST_TOKEN`
-- **Value**: `ATgjAAIncDE1MzBmNDRmZjExODI0MDFkYjk3MzgyZDFlMGU3MWJhMXAxMTQzNzE`
+- **Value**: `<your-upstash-rest-token>`
 - **Environment**: Selecciona "Production" (y "Preview" si quieres)
 - **Sensitive**: Marca esta casilla
+
+> Recomendación: copia estos valores desde el dashboard de Upstash para tu base Redis (REST API).
+> Nunca pegues tokens reales en documentación commiteada.
 
 ## Si el Campo Environment Está Deshabilitado
 
