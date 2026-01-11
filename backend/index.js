@@ -106,21 +106,18 @@ try {
   
   if (!databaseUrl) {
     console.error("[Prisma] ❌ DATABASE_URL is not set!");
-    // No lanzar error aquí, permitir que la app inicie y devolver error JSON en los endpoints
-    console.warn("[Prisma] ⚠️ DATABASE_URL not set, database operations will fail");
-    // No intentar crear PrismaClient sin URL, se inicializará cuando se necesite
-    prisma = null;
-  } else {
-    prisma = new PrismaClient({
-      log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
-      datasources: {
-        db: {
-          url: databaseUrl,
-        },
-      },
-    });
-    console.log("[Prisma] ✅ PrismaClient initialized");
+    throw new Error("DATABASE_URL environment variable is required");
   }
+  
+  prisma = new PrismaClient({
+    log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
+    datasources: {
+      db: {
+        url: databaseUrl,
+      },
+    },
+  });
+  console.log("[Prisma] ✅ PrismaClient initialized");
   
   // Intentar crear la tabla Session si no existe (crítico para sesiones en producción)
   // Ejecutar de forma asíncrona sin bloquear el inicio del servidor
@@ -334,11 +331,8 @@ if (isProduction) {
           return callback(null, true);
         }
         console.log("[CORS] Checking origin:", origin);
-        // Permitir cualquier subdominio de vercel.app, localhost, o cualquier dominio de Vercel
-        if (origin.includes('.vercel.app') || 
-            origin.includes('localhost') || 
-            origin.includes('127.0.0.1') ||
-            origin.endsWith('.vercel.app')) {
+        // Permitir cualquier subdominio de vercel.app o localhost
+        if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
           console.log("[CORS] Origin allowed:", origin);
           return callback(null, true);
         }
@@ -384,28 +378,12 @@ try {
     if (req.method === 'OPTIONS') {
       // Aplicar CORS manualmente para preflight
       const origin = req.headers.origin;
-      let allowOrigin = false;
-      
-      if (origin) {
-        // Si ALLOWED_ORIGINS está configurada, verificar contra la lista
-        if (isProduction && process.env.ALLOWED_ORIGINS) {
-          const allowedOriginsList = process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim());
-          allowOrigin = allowedOriginsList.includes(origin);
-        } else {
-          // Si no está configurada, permitir cualquier subdominio de vercel.app
-          allowOrigin = origin.includes('.vercel.app') || 
-                       origin.includes('localhost') || 
-                       origin.includes('127.0.0.1') ||
-                       origin.endsWith('.vercel.app');
-        }
-        
-        if (allowOrigin) {
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
-          res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
-        }
+      if (origin && (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
       }
       return res.status(204).end();
     }
@@ -553,8 +531,7 @@ setInterval(() => {
 // ==================== SISTEMA DE AUDITORÍA ====================
 async function logAuditEvent(req, action, resource = null, resourceId = null, details = null) {
   try {
-    // Usar req.userId (JWT) o req.session.userId (session) según disponibilidad
-    const userId = req.userId || (req.session && req.session.userId) || null;
+    const userId = req.session?.userId || null;
     const siteId = req.siteId || null;
     const ipAddress = req.ip || req.connection?.remoteAddress || req.headers['x-forwarded-for'] || null;
     const userAgent = req.headers['user-agent'] || null;
@@ -683,147 +660,6 @@ app.get("/api/pages", (req, res) => {
     { id: 1, title: "Home", body: "Welcome to my site" },
     { id: 2, title: "About", body: "This is a demo CMS" },
   ]);
-});
-  try {
-    // Solo permitir a admins
-    const userId = req.userId;
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { isAdmin: true }
-    });
-
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ error: "Only admins can execute this action" });
-    }
-
-    console.log("[POST /api/admin/update-sites-and-user] Executing update script...");
-
-    const bcrypt = require("bcrypt");
-
-    // 1. Actualizar nombre del sitio "test-frontend" a "cineclube"
-    const testFrontendSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { slug: "test-frontend" },
-          { slug: { contains: "test-frontend" } }
-        ]
-      }
-    });
-
-    let results = {};
-
-    if (testFrontendSite) {
-      const updatedSite1 = await prisma.site.update({
-        where: { id: testFrontendSite.id },
-        data: { name: "cineclube" }
-      });
-      results.testFrontend = { updated: true, newName: updatedSite1.name, id: updatedSite1.id };
-      console.log(`✅ Updated site "${testFrontendSite.slug}" name to: "${updatedSite1.name}"`);
-    } else {
-      results.testFrontend = { updated: false, message: "Site not found" };
-      console.log("⚠️  Site 'test-frontend' not found");
-    }
-
-    // 2. Actualizar nombre del sitio "react-frontend" a "sympaathy"
-    const reactFrontendSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { slug: "react-frontend" },
-          { slug: { contains: "react-frontend" } },
-          { name: { contains: "React" } }
-        ]
-      }
-    });
-
-    if (reactFrontendSite) {
-      const updatedSite2 = await prisma.site.update({
-        where: { id: reactFrontendSite.id },
-        data: { name: "sympaathy" }
-      });
-      results.reactFrontend = { updated: true, newName: updatedSite2.name, id: updatedSite2.id };
-      console.log(`✅ Updated site "${reactFrontendSite.slug}" name to: "${updatedSite2.name}"`);
-    } else {
-      results.reactFrontend = { updated: false, message: "Site not found" };
-      console.log("⚠️  Site 'react-frontend' not found");
-    }
-
-    // 3. Buscar el sitio cineclube (por ID 3 o por nombre)
-    const cineclubeSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { id: 3 },
-          { slug: "test-frontend" },
-          { name: { contains: "cineclube" } }
-        ]
-      }
-    });
-
-    if (!cineclubeSite) {
-      return res.status(404).json({ error: "Cineclube site not found", results });
-    }
-
-    // 4. Crear o actualizar usuario neuzaaneuza@gmail.com
-    const userEmail = "neuzaaneuza@gmail.com";
-    let user = await prisma.user.findUnique({
-      where: { email: userEmail }
-    });
-
-    if (!user) {
-      const password = "neuzaneuza";
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
-      user = await prisma.user.create({
-        data: {
-          email: userEmail,
-          password: hashedPassword,
-          isAdmin: false,
-          emailVerified: false
-        }
-      });
-      results.user = { created: true, email: userEmail, id: user.id };
-      console.log(`✅ Created user: ${userEmail}`);
-    } else {
-      const password = "neuzaneuza";
-      const hashedPassword = await bcrypt.hash(password, 10);
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          password: hashedPassword,
-          isAdmin: false
-        }
-      });
-      results.user = { updated: true, email: userEmail, id: user.id };
-      console.log(`✅ Updated user: ${userEmail}`);
-    }
-
-    // 5. Asignar usuario al sitio cineclube
-    await prisma.userSite.upsert({
-      where: {
-        userId_siteId: {
-          userId: user.id,
-          siteId: cineclubeSite.id
-        }
-      },
-      create: {
-        userId: user.id,
-        siteId: cineclubeSite.id
-      },
-      update: {}
-    });
-
-    results.userSite = { assigned: true, siteId: cineclubeSite.id, siteName: cineclubeSite.name };
-
-    console.log(`✅ Assigned user ${userEmail} to site "${cineclubeSite.name}" (id=${cineclubeSite.id})`);
-
-    res.json({
-      success: true,
-      message: "Sites updated and user created/updated successfully",
-      results
-    });
-  } catch (err) {
-    console.error("[POST /api/admin/update-sites-and-user] ERROR:", err);
-    res.status(500).json({ error: "Failed to update sites and user", message: err.message });
-  }
 });
 
 // Helper: generar token aleatorio seguro
@@ -2218,16 +2054,10 @@ app.post("/posts", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (
     const siteId = req.siteId;
 
     // Verificar que el usuario tenga acceso al sitio
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: siteId,
         },
       },
@@ -2522,15 +2352,6 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     // siteId viene del middleware resolveSiteFromDomain
     const siteId = req.siteId;
 
-    // Verificar que Prisma esté inicializado
-    if (!prisma) {
-      console.error("[Backend PUT /posts/:id] ERROR: Prisma not initialized");
-      return res.status(500).json({ 
-        error: "Database not available",
-        message: "DATABASE_URL is not configured. Please check server configuration."
-      });
-    }
-
     // Verificar que el post existe y pertenece al sitio
     const existing = await prisma.post.findUnique({ 
       where: { id },
@@ -2545,16 +2366,10 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     }
 
     // Verificar que el usuario tenga acceso al sitio
-    // Usar req.userId (JWT) o req.session.userId (session) según disponibilidad
-    const userId = req.userId || (req.session && req.session.userId);
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: siteId,
         },
       },
@@ -2655,81 +2470,36 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     };
 
     // Si se proporcionan bloques, reemplazar todos los bloques existentes
-    // CRÍTICO: Envolver deleteMany + update en una única transacción para evitar
-    // problemas de snapshot inconsistente y constraints en Supabase/serverless
-    let post;
-    
     if (blocks !== undefined) {
-      // Preparar bloques con normalización y sanitización
-      const blocksToCreate = Array.isArray(blocks) && blocks.length > 0
-        ? blocks.map((block, index) => {
-            // Normalizar order: asegurar que sea Int (no string)
-            const normalizedOrder = Number.isInteger(block.order)
-              ? block.order
-              : parseInt(block.order ?? index, 10);
-            
-            // Sanitizar metadata: eliminar undefined, funciones, referencias circulares
-            const sanitizedMetadata = block.metadata
-              ? JSON.parse(JSON.stringify(block.metadata))
-              : null;
-            
-            return {
-              type: block.type,
-              content: block.content || null,
-              order: normalizedOrder,
-              metadata: sanitizedMetadata,
-            };
-          })
-        : [];
+      // Eliminar bloques existentes
+      await prisma.postBlock.deleteMany({
+        where: { postId: id },
+      });
       
-      // Si hay bloques, preparar updateData con nested create
-      if (blocksToCreate.length > 0) {
+      // Crear nuevos bloques si se proporcionaron
+      if (Array.isArray(blocks) && blocks.length > 0) {
         updateData.blocks = {
-          create: blocksToCreate,
+          create: blocks.map((block, index) => ({
+            type: block.type,
+            content: block.content || null,
+            order: block.order !== undefined ? block.order : index,
+            metadata: block.metadata || null,
+          })),
         };
       }
-      
-      // Logging para debugging
-      console.log("[Backend PUT /posts/:id] Blocks to create:", blocksToCreate.length);
-      if (process.env.NODE_ENV === 'development') {
-        console.log("[Backend PUT /posts/:id] updateData.blocks:", JSON.stringify(updateData.blocks, null, 2));
-      }
-      
-      // ⚠️ SOLUCIÓN CRÍTICA: Envolver deleteMany + update en una única transacción atómica
-      // Esto evita problemas de snapshot inconsistente y constraints en Supabase/serverless
-      post = await prisma.$transaction(async (tx) => {
-        // Eliminar bloques existentes dentro de la transacción
-        await tx.postBlock.deleteMany({
-          where: { postId: id },
-        });
-        
-        // Actualizar post y crear nuevos bloques en la misma transacción
-        return tx.post.update({
-          where: { id },
-          data: updateData,
-          include: {
-            tags: true,
-            section: true,
-            blocks: {
-              orderBy: { order: "asc" },
-            },
-          },
-        });
-      });
-    } else {
-      // Si no hay bloques, actualizar normalmente (sin transacción explícita)
-      post = await prisma.post.update({
-        where: { id },
-        data: updateData,
-        include: {
-          tags: true,
-          section: true,
-          blocks: {
-            orderBy: { order: "asc" },
-          },
-        },
-      });
     }
+
+    const post = await prisma.post.update({
+      where: { id },
+      data: updateData,
+      include: {
+        tags: true,
+        section: true,
+        blocks: {
+          orderBy: { order: "asc" },
+        },
+      },
+    });
 
     // Si la sección es de tipo "thumbnails" y se proporciona thumbnailData, actualizar el thumbnail
     if (thumbnailData && finalType === "thumbnails") {
@@ -2809,19 +2579,8 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
 
     res.json(post);
   } catch (err) {
-    console.error("[Backend PUT /posts/:id] ERROR in catch:", {
-      message: err.message,
-      stack: err.stack,
-      name: err.name,
-      code: err.code,
-      postId: req.params.id,
-      siteId: req.siteId,
-      userId: req.userId
-    });
-    res.status(500).json({ 
-      error: "Failed to update post",
-      message: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    console.error(err);
+    res.status(500).json({ error: "Failed to update post" });
   }
 });
 
@@ -2845,14 +2604,8 @@ app.delete("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, a
     }
 
     // Verificar que el usuario tenga acceso al sitio (o sea admin)
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -2860,7 +2613,7 @@ app.delete("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, a
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -2919,14 +2672,8 @@ app.get("/posts/:postId/blocks", adminRateLimiter, resolveSiteFromDomain, requir
     }
 
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -2934,7 +2681,7 @@ app.get("/posts/:postId/blocks", adminRateLimiter, resolveSiteFromDomain, requir
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -2983,14 +2730,8 @@ app.post("/posts/:postId/blocks", adminRateLimiter, resolveSiteFromDomain, requi
     }
 
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -2998,7 +2739,7 @@ app.post("/posts/:postId/blocks", adminRateLimiter, resolveSiteFromDomain, requi
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -3067,14 +2808,8 @@ app.put("/posts/:postId/blocks/:blockId", adminRateLimiter, resolveSiteFromDomai
     }
 
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -3082,7 +2817,7 @@ app.put("/posts/:postId/blocks/:blockId", adminRateLimiter, resolveSiteFromDomai
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -3139,14 +2874,8 @@ app.delete("/posts/:postId/blocks/:blockId", adminRateLimiter, resolveSiteFromDo
     }
 
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -3154,7 +2883,7 @@ app.delete("/posts/:postId/blocks/:blockId", adminRateLimiter, resolveSiteFromDo
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -3205,14 +2934,8 @@ app.put("/posts/:postId/blocks/reorder", adminRateLimiter, resolveSiteFromDomain
     }
 
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -3220,7 +2943,7 @@ app.put("/posts/:postId/blocks/reorder", adminRateLimiter, resolveSiteFromDomain
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -3312,16 +3035,10 @@ app.post("/tags", resolveSiteFromDomain, requireAuth, async (req, res) => {
     const siteId = req.siteId;
 
     // Verificar que el usuario tenga acceso al sitio
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: siteId,
         },
       },
@@ -3432,16 +3149,10 @@ app.post("/thumbnails", adminRateLimiter, resolveSiteFromDomain, requireAuth, as
     }
     
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: siteId,
         },
       },
@@ -3599,16 +3310,10 @@ app.put("/thumbnails/reorder", adminRateLimiter, resolveSiteFromDomain, requireA
     console.log("[PUT /thumbnails/reorder] Thumbnail IDs:", thumbnailIds);
     
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: siteId,
         },
       },
@@ -3686,16 +3391,10 @@ app.put("/thumbnails/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth,
     }
     
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: siteId,
         },
       },
@@ -3767,16 +3466,10 @@ app.delete("/thumbnails/:id", adminRateLimiter, resolveSiteFromDomain, requireAu
     }
     
     // Verificar permisos
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: siteId,
         },
       },
@@ -4000,16 +3693,11 @@ app.get("/sections/:id/template", requireAuth, async (req, res) => {
   try {
     console.log("[GET /sections/:id/template] ========== INICIO ==========");
     console.log("[GET /sections/:id/template] Request params:", req.params);
-    console.log("[GET /sections/:id/template] req.userId:", req.userId);
+    console.log("[GET /sections/:id/template] Session userId:", req.session ? req.session.userId : "no session");
     
-    // Cargar usuario usando req.userId (de JWT o sesión)
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
+    // Cargar usuario desde la sesión
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { id: true, email: true, isAdmin: true },
     });
     
@@ -4163,21 +3851,15 @@ app.post("/sections", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     const siteId = req.siteId;
 
     // Verificar permisos: admin o usuario asignado al sitio
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
     if (!user || !user.isAdmin) {
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: siteId,
           },
         },
@@ -4355,21 +4037,15 @@ app.delete("/sections/:id", adminRateLimiter, requireAuth, async (req, res) => {
     }
 
     // Permisos: admin o usuario asignado al site de la sección
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
     if (!user || !user.isAdmin) {
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: existing.siteId,
           },
         },
@@ -4430,7 +4106,6 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
       sites = await prisma.site.findMany({
         include: {
           config: true,
-          frontendProfile: true,
           _count: {
             select: { posts: true, sections: true },
           },
@@ -4447,7 +4122,6 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
           site: {
             include: {
               config: true,
-              frontendProfile: true,
               _count: {
                 select: { posts: true, sections: true },
               },
@@ -4475,14 +4149,8 @@ app.get("/sites/:id", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
 
     // Verificar si el usuario es admin
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -4491,7 +4159,7 @@ app.get("/sites/:id", requireAuth, async (req, res) => {
       const userSite = await prisma.userSite.findUnique({
         where: {
           userId_siteId: {
-            userId: userId,
+            userId: req.session.userId,
             siteId: id,
           },
         },
@@ -4553,16 +4221,10 @@ app.put("/sites/:id/config", requireAuth, async (req, res) => {
     const { themeColor, logoUrl, font, customCSS } = req.body;
 
     // Verificar que el usuario tenga acceso
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const userSite = await prisma.userSite.findUnique({
       where: {
         userId_siteId: {
-          userId: userId,
+          userId: req.session.userId,
           siteId: id,
         },
       },
@@ -4603,14 +4265,8 @@ app.put("/sites/:id/config", requireAuth, async (req, res) => {
 app.get("/audit-logs", adminRateLimiter, requireAuth, async (req, res) => {
   try {
     // Verificar que el usuario sea admin
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -4694,14 +4350,8 @@ app.get("/audit-logs", adminRateLimiter, requireAuth, async (req, res) => {
 app.get("/audit-logs/stats", adminRateLimiter, requireAuth, async (req, res) => {
   try {
     // Verificar que el usuario sea admin
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -4766,14 +4416,8 @@ app.get("/audit-logs/stats", adminRateLimiter, requireAuth, async (req, res) => 
 // GET /frontend-profiles - Listar todos los profiles (solo admins)
 app.get("/frontend-profiles", adminRateLimiter, requireAuth, async (req, res) => {
   try {
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -4800,14 +4444,8 @@ app.get("/frontend-profiles", adminRateLimiter, requireAuth, async (req, res) =>
 // GET /frontend-profiles/:id - Obtener un profile específico
 app.get("/frontend-profiles/:id", adminRateLimiter, requireAuth, async (req, res) => {
   try {
-    // Usar req.userId (de JWT o sesión) en lugar de req.session.userId
-    const userId = req.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized. Please login." });
-    }
-    
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: req.session.userId },
       select: { isAdmin: true },
     });
 
@@ -4950,62 +4588,22 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
   }
 });
 
-
-// Middleware 404 - Debe ir ANTES del middleware de errores
-// Asegurar que todas las rutas no encontradas devuelvan JSON, no HTML
-app.use((req, res) => {
-  // Solo devolver 404 JSON si la ruta no es para archivos estáticos
-  // Las rutas estáticas (admin, login) son manejadas por Vercel
-  if (!req.path.startsWith('/admin') && !req.path.startsWith('/login')) {
-    res.setHeader('Content-Type', 'application/json');
-    res.status(404).json({ 
-      error: "Not found",
-      message: `Route ${req.method} ${req.path} not found`
-    });
-  } else {
-    // Para rutas de admin/login, dejar que Vercel las maneje
-    res.status(404).send("Not found");
-  }
-});
-
-// ==================== MIDDLEWARES DE ERROR GLOBAL ====================
-// IMPORTANTE: Estos middlewares deben ir AL FINAL, ANTES de module.exports
-// para que funcionen en Vercel serverless
-
-// Middleware 404: Capturar todas las rutas no encontradas y devolver JSON
-app.use((req, res) => {
-  console.error(`[404] Route not found: ${req.method} ${req.path}`);
-  res.setHeader('Content-Type', 'application/json');
-  res.status(404).json({ 
-    error: "Route not found",
-    path: req.path,
-    method: req.method
-  });
-});
-
-// Middleware de error global: Capturar todos los errores no manejados
+// Manejo de errores global para evitar crashes
 app.use((err, req, res, next) => {
-  console.error('[Global Error Handler] Unhandled error:', {
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-  });
+  console.error("[Error Handler] Unhandled error:", err);
+  console.error("[Error Handler] Stack:", err.stack);
   
-  // Asegurar que siempre se devuelva JSON, nunca HTML
+  // Asegurar que siempre devolvemos JSON, no HTML
   if (!res.headersSent) {
     res.setHeader('Content-Type', 'application/json');
-    res.status(err.status || 500).json({
-      error: err.message || "Internal server error",
-      path: req.path,
-      method: req.method,
-      details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    res.status(500).json({ 
+      error: "Internal server error",
+      message: process.env.NODE_ENV === "production" ? "An error occurred" : err.message
     });
   }
 });
 
 // Export handler for Vercel serverless
-// IMPORTANTE: module.exports debe ir DESPUÉS de todos los middlewares
 module.exports = app;
 
 // Only listen if running locally (not in Vercel)
