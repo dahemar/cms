@@ -3098,19 +3098,25 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
         requestId: requestId,
       };
       
-      // En desarrollo, incluir más detalles
-      if (process.env.NODE_ENV === 'development') {
-        errorResponse.message = err.message;
-        errorResponse.details = {
+      // CRÍTICO: Incluir detalles de Prisma en producción también (filtrado)
+      // Esto es esencial para debugging en Vercel
+      if (err.code?.startsWith('P')) {
+        errorResponse.prismaError = {
           code: err.code,
-          name: err.name,
+          message: err.message,
+          // En producción, solo incluir target (campo que falló)
+          // En desarrollo, incluir todo el meta
+          meta: process.env.NODE_ENV === 'production' 
+            ? { target: err.meta?.target } 
+            : err.meta,
         };
-        
-        // Si es error de Prisma, incluir código y meta
-        if (err.code?.startsWith('P')) {
-          errorResponse.prismaError = {
+      } else {
+        // Para errores no-Prisma, incluir mensaje en desarrollo
+        if (process.env.NODE_ENV === 'development') {
+          errorResponse.message = err.message;
+          errorResponse.details = {
             code: err.code,
-            meta: err.meta,
+            name: err.name,
           };
         }
       }
