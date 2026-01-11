@@ -231,9 +231,37 @@
       const isHttps = window.location.protocol === 'https:';
       // IMPORTANT: keep hostname consistent (localhost vs 127.0.0.1) so session cookies work.
       const localHost = (window.location.hostname === '127.0.0.1') ? '127.0.0.1' : 'localhost';
-      const API_URL = isLocalhost
+      const DEFAULT_PROD_API_URL = 'https://cms-woad-delta.vercel.app';
+
+      // NOTE: In prod, this file might be hosted on a different origin than the API.
+      // We start with same-origin, but we can fall back if /auth routes are missing (404).
+      let API_URL = isLocalhost
         ? `${isHttps ? 'https' : 'http'}://${localHost}:3000`
-        : window.location.origin; // Usar el mismo dominio en producción
+        : window.location.origin;
+
+      async function ensureApiUrl() {
+        if (isLocalhost) return;
+
+        try {
+          const res = await fetch(`${API_URL}/auth/me`, {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'include',
+          });
+
+          // If the current origin doesn't host the backend, our backend 404 JSON is common.
+          // Only treat 404 as "wrong API"; other statuses can be normal (200 unauth / 403 etc.).
+          if (res.status === 404 && API_URL !== DEFAULT_PROD_API_URL) {
+            console.warn('[Login] API_URL seems wrong (404 on /auth/me). Falling back:', DEFAULT_PROD_API_URL);
+            API_URL = DEFAULT_PROD_API_URL;
+          }
+        } catch (err) {
+          if (API_URL !== DEFAULT_PROD_API_URL) {
+            console.warn('[Login] API_URL check failed. Falling back:', DEFAULT_PROD_API_URL, err);
+            API_URL = DEFAULT_PROD_API_URL;
+          }
+        }
+      }
       let isRegisterMode = false;
       let isForgotPasswordMode = false;
 
@@ -357,6 +385,8 @@
         }
 
         try {
+          await ensureApiUrl();
+
           const res = await fetch(`${API_URL}/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
