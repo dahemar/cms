@@ -163,19 +163,32 @@ function getPrisma() {
 
 // Variable para compatibilidad con código existente (será inicializada lazy cuando se necesite)
 let prisma = null;
+
+// Inicializar Prisma de forma lazy pero temprana: muchas rutas/middlewares usan `prisma` directamente.
+// Si DATABASE_URL no está configurada, getPrisma() devolverá null y las rutas responderán con error.
+prisma = getPrisma();
+if (!prisma) {
+  console.warn('[Init] ⚠️ Prisma is not initialized (DATABASE_URL missing or invalid)');
+}
   
   // Intentar crear la tabla Session si no existe (crítico para sesiones en producción)
   // Ejecutar de forma asíncrona sin bloquear el inicio del servidor
   process.nextTick(async () => {
+    const prismaClient = prisma || getPrisma();
+    if (!prismaClient) {
+      console.warn('[Session Table] ⚠️ Skipping session table check: Prisma not available');
+      return;
+    }
+    prisma = prismaClient;
     try {
       // Verificar si la tabla existe intentando hacer una query
-      await prisma.$queryRaw`SELECT 1 FROM "Session" LIMIT 1`;
+      await prismaClient.$queryRaw`SELECT 1 FROM "Session" LIMIT 1`;
       console.log("[Session Table] ✅ Session table exists");
     } catch (error) {
       if (error.code === 'P2021' || error.message?.includes('does not exist') || (error.message?.includes('relation') && error.message?.includes('does not exist'))) {
         console.log("[Session Table] ⚠️ Session table does not exist, creating it...");
         try {
-          await prisma.$executeRawUnsafe(`
+          await prismaClient.$executeRawUnsafe(`
             CREATE TABLE IF NOT EXISTS "Session" (
                 "id" TEXT NOT NULL,
                 "data" TEXT NOT NULL,
@@ -184,7 +197,7 @@ let prisma = null;
                 CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
             );
           `);
-          await prisma.$executeRawUnsafe(`
+          await prismaClient.$executeRawUnsafe(`
             CREATE INDEX IF NOT EXISTS "Session_expiresAt_idx" ON "Session"("expiresAt");
           `);
           console.log("[Session Table] ✅ Session table created successfully!");
@@ -1376,37 +1389,16 @@ app.post("/auth/login", async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   
   try {
-    // Verificar que Prisma esté inicializado
-    if (!prisma) {
+    // Asegurar Prisma (serverless-safe)
+    const prismaClient = prisma || getPrisma();
+    if (!prismaClient) {
       console.error("[Login] ❌ Prisma not initialized");
-      console.error("[Login] DATABASE_URL:", process.env.DATABASE_URL ? "Set" : "NOT SET");
-      // Intentar inicializar Prisma si no está inicializado
-      try {
-        console.log("[Login] ⚠️ Attempting to initialize Prisma...");
-        prisma = new PrismaClient({
-          log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error', 'warn'],
-        });
-        await prisma.$connect();
-        console.log("[Login] ✅ Prisma initialized successfully");
-      } catch (initError) {
-        console.error("[Login] ❌ Failed to initialize Prisma:", initError.message);
-        return res.status(500).json({ 
-          error: "Database connection not available",
-          message: "Failed to initialize database connection. Please check server logs."
-        });
-      }
-    }
-    
-    // Verificar conexión a la base de datos
-    try {
-      await prisma.$connect();
-    } catch (connectError) {
-      console.error("[Login] ❌ Failed to connect to database:", connectError.message);
-      return res.status(500).json({ 
-        error: "Database connection failed",
-        message: connectError.message
+      return res.status(500).json({
+        error: "Database not available",
+        message: "DATABASE_URL is not configured or is invalid. Check Vercel env vars."
       });
     }
+    prisma = prismaClient;
     
     const { email, password } = req.body;
 
@@ -1415,7 +1407,7 @@ app.post("/auth/login", async (req, res) => {
     }
 
     // Buscar usuario
-    const user = await prisma.user.findUnique({
+    const user = await prismaClient.user.findUnique({
       where: { email },
     });
 
