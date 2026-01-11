@@ -331,11 +331,8 @@ if (isProduction) {
           return callback(null, true);
         }
         console.log("[CORS] Checking origin:", origin);
-        // Permitir cualquier subdominio de vercel.app, localhost, o cualquier dominio de Vercel
-        if (origin.includes('.vercel.app') || 
-            origin.includes('localhost') || 
-            origin.includes('127.0.0.1') ||
-            origin.endsWith('.vercel.app')) {
+        // Permitir cualquier subdominio de vercel.app o localhost
+        if (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
           console.log("[CORS] Origin allowed:", origin);
           return callback(null, true);
         }
@@ -381,28 +378,12 @@ try {
     if (req.method === 'OPTIONS') {
       // Aplicar CORS manualmente para preflight
       const origin = req.headers.origin;
-      let allowOrigin = false;
-      
-      if (origin) {
-        // Si ALLOWED_ORIGINS está configurada, verificar contra la lista
-        if (isProduction && process.env.ALLOWED_ORIGINS) {
-          const allowedOriginsList = process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim());
-          allowOrigin = allowedOriginsList.includes(origin);
-        } else {
-          // Si no está configurada, permitir cualquier subdominio de vercel.app
-          allowOrigin = origin.includes('.vercel.app') || 
-                       origin.includes('localhost') || 
-                       origin.includes('127.0.0.1') ||
-                       origin.endsWith('.vercel.app');
-        }
-        
-        if (allowOrigin) {
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
-          res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
-        }
+      if (origin && (origin.includes('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
       }
       return res.status(204).end();
     }
@@ -679,147 +660,6 @@ app.get("/api/pages", (req, res) => {
     { id: 1, title: "Home", body: "Welcome to my site" },
     { id: 2, title: "About", body: "This is a demo CMS" },
   ]);
-});
-  try {
-    // Solo permitir a admins
-    const userId = req.userId;
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { isAdmin: true }
-    });
-
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ error: "Only admins can execute this action" });
-    }
-
-    console.log("[POST /api/admin/update-sites-and-user] Executing update script...");
-
-    const bcrypt = require("bcrypt");
-
-    // 1. Actualizar nombre del sitio "test-frontend" a "cineclube"
-    const testFrontendSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { slug: "test-frontend" },
-          { slug: { contains: "test-frontend" } }
-        ]
-      }
-    });
-
-    let results = {};
-
-    if (testFrontendSite) {
-      const updatedSite1 = await prisma.site.update({
-        where: { id: testFrontendSite.id },
-        data: { name: "cineclube" }
-      });
-      results.testFrontend = { updated: true, newName: updatedSite1.name, id: updatedSite1.id };
-      console.log(`✅ Updated site "${testFrontendSite.slug}" name to: "${updatedSite1.name}"`);
-    } else {
-      results.testFrontend = { updated: false, message: "Site not found" };
-      console.log("⚠️  Site 'test-frontend' not found");
-    }
-
-    // 2. Actualizar nombre del sitio "react-frontend" a "sympaathy"
-    const reactFrontendSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { slug: "react-frontend" },
-          { slug: { contains: "react-frontend" } },
-          { name: { contains: "React" } }
-        ]
-      }
-    });
-
-    if (reactFrontendSite) {
-      const updatedSite2 = await prisma.site.update({
-        where: { id: reactFrontendSite.id },
-        data: { name: "sympaathy" }
-      });
-      results.reactFrontend = { updated: true, newName: updatedSite2.name, id: updatedSite2.id };
-      console.log(`✅ Updated site "${reactFrontendSite.slug}" name to: "${updatedSite2.name}"`);
-    } else {
-      results.reactFrontend = { updated: false, message: "Site not found" };
-      console.log("⚠️  Site 'react-frontend' not found");
-    }
-
-    // 3. Buscar el sitio cineclube (por ID 3 o por nombre)
-    const cineclubeSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { id: 3 },
-          { slug: "test-frontend" },
-          { name: { contains: "cineclube" } }
-        ]
-      }
-    });
-
-    if (!cineclubeSite) {
-      return res.status(404).json({ error: "Cineclube site not found", results });
-    }
-
-    // 4. Crear o actualizar usuario neuzaaneuza@gmail.com
-    const userEmail = "neuzaaneuza@gmail.com";
-    let user = await prisma.user.findUnique({
-      where: { email: userEmail }
-    });
-
-    if (!user) {
-      const password = "neuzaneuza";
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
-      user = await prisma.user.create({
-        data: {
-          email: userEmail,
-          password: hashedPassword,
-          isAdmin: false,
-          emailVerified: false
-        }
-      });
-      results.user = { created: true, email: userEmail, id: user.id };
-      console.log(`✅ Created user: ${userEmail}`);
-    } else {
-      const password = "neuzaneuza";
-      const hashedPassword = await bcrypt.hash(password, 10);
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          password: hashedPassword,
-          isAdmin: false
-        }
-      });
-      results.user = { updated: true, email: userEmail, id: user.id };
-      console.log(`✅ Updated user: ${userEmail}`);
-    }
-
-    // 5. Asignar usuario al sitio cineclube
-    await prisma.userSite.upsert({
-      where: {
-        userId_siteId: {
-          userId: user.id,
-          siteId: cineclubeSite.id
-        }
-      },
-      create: {
-        userId: user.id,
-        siteId: cineclubeSite.id
-      },
-      update: {}
-    });
-
-    results.userSite = { assigned: true, siteId: cineclubeSite.id, siteName: cineclubeSite.name };
-
-    console.log(`✅ Assigned user ${userEmail} to site "${cineclubeSite.name}" (id=${cineclubeSite.id})`);
-
-    res.json({
-      success: true,
-      message: "Sites updated and user created/updated successfully",
-      results
-    });
-  } catch (err) {
-    console.error("[POST /api/admin/update-sites-and-user] ERROR:", err);
-    res.status(500).json({ error: "Failed to update sites and user", message: err.message });
-  }
 });
 
 // Helper: generar token aleatorio seguro
@@ -1176,153 +1016,6 @@ function requireAuth(req, res, next) {
   
   return next();
 }
-
-// ==================== ADMIN UTILITIES (TEMPORAL) ====================
-// Endpoint temporal para actualizar nombres de sitios y crear usuario
-// TODO: Eliminar este endpoint después de usarlo
-// NOTA: Colocado después de requireAuth para asegurar que esté definido
-app.post("/api/admin/update-sites-and-user", adminRateLimiter, requireAuth, async (req, res) => {
-  try {
-    // Solo permitir a admins
-    const userId = req.userId;
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { isAdmin: true }
-    });
-
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ error: "Only admins can execute this action" });
-    }
-
-    console.log("[POST /api/admin/update-sites-and-user] Executing update script...");
-
-    const bcrypt = require("bcrypt");
-
-    // 1. Actualizar nombre del sitio "test-frontend" a "cineclube"
-    const testFrontendSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { slug: "test-frontend" },
-          { slug: { contains: "test-frontend" } }
-        ]
-      }
-    });
-
-    let results = {};
-
-    if (testFrontendSite) {
-      const updatedSite1 = await prisma.site.update({
-        where: { id: testFrontendSite.id },
-        data: { name: "cineclube" }
-      });
-      results.testFrontend = { updated: true, newName: updatedSite1.name, id: updatedSite1.id };
-      console.log(`✅ Updated site "${testFrontendSite.slug}" name to: "${updatedSite1.name}"`);
-    } else {
-      results.testFrontend = { updated: false, message: "Site not found" };
-      console.log("⚠️  Site 'test-frontend' not found");
-    }
-
-    // 2. Actualizar nombre del sitio "react-frontend" a "sympaathy"
-    const reactFrontendSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { slug: "react-frontend" },
-          { slug: { contains: "react-frontend" } },
-          { name: { contains: "React" } }
-        ]
-      }
-    });
-
-    if (reactFrontendSite) {
-      const updatedSite2 = await prisma.site.update({
-        where: { id: reactFrontendSite.id },
-        data: { name: "sympaathy" }
-      });
-      results.reactFrontend = { updated: true, newName: updatedSite2.name, id: updatedSite2.id };
-      console.log(`✅ Updated site "${reactFrontendSite.slug}" name to: "${updatedSite2.name}"`);
-    } else {
-      results.reactFrontend = { updated: false, message: "Site not found" };
-      console.log("⚠️  Site 'react-frontend' not found");
-    }
-
-    // 3. Buscar el sitio cineclube (por ID 3 o por nombre)
-    const cineclubeSite = await prisma.site.findFirst({
-      where: {
-        OR: [
-          { id: 3 },
-          { slug: "test-frontend" },
-          { name: { contains: "cineclube" } }
-        ]
-      }
-    });
-
-    if (!cineclubeSite) {
-      return res.status(404).json({ error: "Cineclube site not found", results });
-    }
-
-    // 4. Crear o actualizar usuario neuzaaneuza@gmail.com
-    const userEmail = "neuzaaneuza@gmail.com";
-    let user = await prisma.user.findUnique({
-      where: { email: userEmail }
-    });
-
-    if (!user) {
-      const password = "neuzaneuza";
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
-      user = await prisma.user.create({
-        data: {
-          email: userEmail,
-          password: hashedPassword,
-          isAdmin: false,
-          emailVerified: false
-        }
-      });
-      results.user = { created: true, email: userEmail, id: user.id };
-      console.log(`✅ Created user: ${userEmail}`);
-    } else {
-      const password = "neuzaneuza";
-      const hashedPassword = await bcrypt.hash(password, 10);
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          password: hashedPassword,
-          isAdmin: false
-        }
-      });
-      results.user = { updated: true, email: userEmail, id: user.id };
-      console.log(`✅ Updated user: ${userEmail}`);
-    }
-
-    // 5. Asignar usuario al sitio cineclube
-    await prisma.userSite.upsert({
-      where: {
-        userId_siteId: {
-          userId: user.id,
-          siteId: cineclubeSite.id
-        }
-      },
-      create: {
-        userId: user.id,
-        siteId: cineclubeSite.id
-      },
-      update: {}
-    });
-
-    results.userSite = { assigned: true, siteId: cineclubeSite.id, siteName: cineclubeSite.name };
-
-    console.log(`✅ Assigned user ${userEmail} to site "${cineclubeSite.name}" (id=${cineclubeSite.id})`);
-
-    res.json({
-      success: true,
-      message: "Sites updated and user created/updated successfully",
-      results
-    });
-  } catch (err) {
-    console.error("[POST /api/admin/update-sites-and-user] ERROR:", err);
-    res.status(500).json({ error: "Failed to update sites and user", message: err.message });
-  }
-});
 
 // Middleware de autenticación por sitio (usa JWT o sesión)
 async function requireSiteAuth(req, res, next) {
@@ -4413,7 +4106,6 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
       sites = await prisma.site.findMany({
         include: {
           config: true,
-          frontendProfile: true,
           _count: {
             select: { posts: true, sections: true },
           },
@@ -4430,7 +4122,6 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
           site: {
             include: {
               config: true,
-              frontendProfile: true,
               _count: {
                 select: { posts: true, sections: true },
               },
@@ -4896,7 +4587,6 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
     res.status(500).json({ error: "Failed to fetch site frontend profile" });
   }
 });
-
 
 // Manejo de errores global para evitar crashes
 app.use((err, req, res, next) => {
