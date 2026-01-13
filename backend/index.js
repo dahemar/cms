@@ -60,7 +60,7 @@ if (isProduction && !JWT_SECRET) {
 }
 
 // Configurar CORS con función dinámica para origin (robusto en Vercel serverless)
-const corsOptions = {
+const baseCorsOptions = {
   origin: (origin, callback) => {
     // Permitir requests sin origin (SSR, curl, Postman, etc.)
     if (!origin) {
@@ -83,7 +83,19 @@ const corsOptions = {
   exposedHeaders: ['Set-Cookie'],
 };
 
-app.use(cors(corsOptions));
+app.use((req, res, next) => {
+  const corsMiddleware = cors({
+    ...baseCorsOptions,
+    origin: (origin, callback) => {
+      const sameHostOrigin = req.headers.host ? `${req.protocol}://${req.headers.host}` : null;
+      if (origin && sameHostOrigin && origin === sameHostOrigin) {
+        return callback(null, true);
+      }
+      return baseCorsOptions.origin(origin, callback);
+    },
+  });
+  corsMiddleware(req, res, next);
+});
 // Aumentar límite del body parser para permitir imágenes base64 grandes
 app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -3350,33 +3362,19 @@ app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) 
 });
 
 // GET /sections/:id/template - Obtener el template de bloques de una sección
-app.get("/sections/:id/template", requireAuth, async (req, res) => {
+app.get("/sections/:id/template", async (req, res) => {
   try {
-    console.log("[GET /sections/:id/template] ========== INICIO ==========");
+    console.log("[GET /sections/:id/template] ========== INICIO (public) ==========");
     console.log("[GET /sections/:id/template] Request params:", req.params);
-    console.log("[GET /sections/:id/template] Session userId:", req.session ? req.session.userId : "no session");
-    
-    // Cargar usuario desde la sesión
-    const user = await prisma.user.findUnique({
-      where: { id: req.session.userId },
-      select: { id: true, email: true, isAdmin: true },
-    });
-    
-    if (!user) {
-      console.error("[GET /sections/:id/template] User not found");
-      return res.status(401).json({ error: "User not found" });
-    }
-    
-    console.log("[GET /sections/:id/template] User:", user.id, "isAdmin:", user.isAdmin);
-    
+
     const sectionId = parseInt(req.params.id);
     console.log("[GET /sections/:id/template] Parsed sectionId:", sectionId);
-    
+
     if (!sectionId || isNaN(sectionId)) {
       console.error("[GET /sections/:id/template] Invalid section ID");
       return res.status(400).json({ error: "Invalid section ID" });
     }
-    
+
     const section = await prisma.section.findUnique({
       where: { id: sectionId },
       select: {
@@ -3388,32 +3386,15 @@ app.get("/sections/:id/template", requireAuth, async (req, res) => {
         siteId: true,
       },
     });
-    
+
     if (!section) {
       console.error("[GET /sections/:id/template] Section not found");
       return res.status(404).json({ error: "Section not found" });
     }
-    
+
     console.log("[GET /sections/:id/template] Section found:", section.name, "siteId:", section.siteId);
-    
-    // Verificar permisos del usuario
-    if (!user.isAdmin) {
-      const userSite = await prisma.userSite.findFirst({
-        where: {
-          userId: user.id,
-          siteId: section.siteId,
-        },
-      });
-      
-      if (!userSite) {
-        console.error("[GET /sections/:id/template] Access denied - user not assigned to site");
-        return res.status(403).json({ error: "Access denied to this section" });
-      }
-    }
-    
-    console.log("[GET /sections/:id/template] Access granted, returning template");
-    console.log("[GET /sections/:id/template] blockTemplate:", section.blockTemplate ? "exists" : "null");
-    
+
+    // Public endpoint: return the resolved template regardless of authentication.
     const resolvedTemplate = await resolveTemplateForSection(section.siteId, section);
 
     let schemaConstraints = null;
