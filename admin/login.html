@@ -227,16 +227,37 @@
 
     <script>
       // Detectar si estamos en producción (Vercel) o desarrollo
-      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       const isHttps = window.location.protocol === 'https:';
-      // IMPORTANT: keep hostname consistent (localhost vs 127.0.0.1) so session cookies work.
-      const localHost = (window.location.hostname === '127.0.0.1') ? '127.0.0.1' : 'localhost';
       const DEFAULT_PROD_API_URL = 'https://cms-woad-delta.vercel.app';
 
+      // Heurística para detectar entornos locales: localhost, .local, 127.0.0.1 y IPs privadas
+      function isPrivateIp(host) {
+        const m = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+        if (!m) return false;
+        const a = +m[1], b = +m[2];
+        if (a === 10) return true;
+        if (a === 127) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 192 && b === 168) return true;
+        return false;
+      }
+
+      function isLocalDevHost(host) {
+        if (!host) return false;
+        if (host === 'localhost' || host === '127.0.0.1') return true;
+        if (host.endsWith('.local')) return true;
+        if (isPrivateIp(host)) return true;
+        return false;
+      }
+
+      const isLocalhost = isLocalDevHost(window.location.hostname);
+      // IMPORTANT: keep hostname consistent (localhost vs 127.0.0.1) so session cookies work.
+      const localHost = (window.location.hostname === '127.0.0.1') ? '127.0.0.1' : 'localhost';
+
       // NOTE: In prod, this file might be hosted on a different origin than the API.
-      // We start with same-origin, but we can fall back if /auth routes are missing (404).
+      // Prefer a local backend when running on common local hostnames or private LAN IPs.
       let API_URL = isLocalhost
-        ? `${isHttps ? 'https' : 'http'}://${localHost}:3000`
+        ? `${isHttps ? 'https' : 'http'}://${window.location.hostname}:3000`
         : window.location.origin;
 
       async function ensureApiUrl() {
