@@ -1640,9 +1640,12 @@
       const isHttps = window.location.protocol === 'https:';
       // IMPORTANT: keep hostname consistent (localhost vs 127.0.0.1) so session cookies work.
       const localHost = (window.location.hostname === '127.0.0.1') ? '127.0.0.1' : 'localhost';
-      const API_URL = isLocalhost ? `${isHttps ? 'https' : 'http'}://${localHost}:3000` : window.location.origin;
-      // En producción, el frontend está en sympaathy-v2.vercel.app, no en el mismo dominio del CMS
-      const FRONTEND_BASE_URL = isLocalhost ? `${isHttps ? 'https' : 'http'}://${localHost}:5173` : "https://sympaathy-v2.vercel.app";
+      const API_URL = isLocalhost
+        ? `${isHttps ? 'https' : 'http'}://${localHost}:3000`
+        : window.location.origin;
+      const FRONTEND_BASE_URL = isLocalhost
+        ? `${isHttps ? 'https' : 'http'}://${localHost}:5173`
+        : window.location.origin;
       
       let editingPostId = null;
       let currentUser = null;
@@ -1792,7 +1795,7 @@
           // Añadir iconos personalizados para Instagram y SoundCloud
           const icons = Quill.import('ui/icons');
           icons['instagram'] = '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.441c.795.001 1.439-.643 1.439-1.44.001-.795-.644-1.44-1.439-1.44z"/></svg>';
-          icons['soundcloud'] = '<img src="/admin/soundcloud-icon.png" alt="SoundCloud" style="width: 18px; height: 18px; display: block;" />';
+          icons['soundcloud'] = '<img src="soundcloud-icon.png" alt="SoundCloud" style="width: 18px; height: 18px; display: block;" />';
           
           quillEditor = new Quill('#editor-container', {
             theme: 'snow',
@@ -2151,7 +2154,7 @@
                 soundcloudButton.className = 'ql-soundcloud';
                 soundcloudButton.setAttribute('title', 'SoundCloud');
                 soundcloudButton.setAttribute('aria-label', 'SoundCloud');
-                soundcloudButton.innerHTML = '<img src="/admin/soundcloud-icon.png" alt="SoundCloud" style="width: 18px; height: 18px; display: block; margin: 0 auto;" />';
+                soundcloudButton.innerHTML = '<img src="soundcloud-icon.png" alt="SoundCloud" style="width: 18px; height: 18px; display: block; margin: 0 auto;" />';
                 soundcloudButton.addEventListener('click', function(e) {
                   e.preventDefault();
                   e.stopPropagation();
@@ -2348,19 +2351,6 @@
             sites = await res.json();
             console.log("[Load Sites] Sites received:", sites.length, sites);
             
-            // En producción, filtrar para mostrar solo sitios con frontend-generic-react (React y Cineclub)
-            if (!isLocalhost) {
-              sites = sites.filter(site => {
-                // Solo mostrar sitios con frontend-generic-react (excluye sitios de prueba sin profile)
-                const hasReactProfile = site.frontendProfile?.name?.includes('frontend-generic-react');
-                // También permitir por slug específico (por si acaso)
-                const allowedSlugs = ['react-frontend', 'test-frontend', 'sympaathy', 'cineclub'];
-                const hasAllowedSlug = allowedSlugs.some(slug => site.slug?.toLowerCase().includes(slug));
-                return hasReactProfile || hasAllowedSlug;
-              });
-              console.log("[Load Sites] Filtered sites (production - React/Cineclub only):", sites.length, sites);
-            }
-            
             // Si es admin, mostrar selector de sitios (solo si no está en modo usuario)
             if (isAdmin && sites.length > 0) {
               // SIEMPRE establecer currentSiteId, incluso si está en modo usuario
@@ -2500,18 +2490,18 @@
           
           // Configurar el email del usuario
           const userInfoElement = document.getElementById("user-info");
-          if (userInfoElement) {
-            if (isAdmin) {
-              // Si es admin, hacer el email clickeable para abrir audit logs
-              userInfoElement.innerHTML = `<span style="cursor: pointer; text-decoration: underline;" id="user-email-clickable">${data.user.email}</span>`;
-              // Remover listeners anteriores si existen
-              const clickableEmail = document.getElementById("user-email-clickable");
-              if (clickableEmail) {
-                clickableEmail.onclick = function(e) {
-                  e.stopPropagation();
-                  openAuditLogsModal();
-                };
-              }
+          if (isAdmin) {
+            // Si es admin, hacer el email clickeable para abrir audit logs
+            userInfoElement.innerHTML = `<span style="cursor: pointer; text-decoration: underline;" id="user-email-clickable">${data.user.email}</span>`;
+            // Remover listeners anteriores si existen
+            const newUserInfoElement = document.getElementById("user-info");
+            const clickableEmail = document.getElementById("user-email-clickable");
+            if (clickableEmail) {
+              clickableEmail.onclick = function(e) {
+                e.stopPropagation();
+                openAuditLogsModal();
+              };
+            }
             // Mostrar botón de vista de usuario solo para admins
             const viewUserModeBtn = document.getElementById("view-user-mode-btn");
             if (viewUserModeBtn) {
@@ -2524,13 +2514,12 @@
                 applyUserModeView(true);
               }
             }
-              // Mostrar/ocultar botones de crear/eliminar secciones según si es admin y no está en modo usuario
-              updateSectionManagerAdminControls();
-            } else {
-              userInfoElement.textContent = data.user.email;
-              // Para usuarios no admin, ocultar controles de admin
-              updateSectionManagerAdminControls();
-            }
+            // Mostrar/ocultar botones de crear/eliminar secciones según si es admin y no está en modo usuario
+            updateSectionManagerAdminControls();
+          } else {
+            userInfoElement.textContent = data.user.email;
+            // Para usuarios no admin, ocultar controles de admin
+            updateSectionManagerAdminControls();
           }
           
           // No mostrar la sección de audit logs en la vista principal (solo en el modal)
@@ -5199,28 +5188,41 @@
         const isRequired = (block.metadata && block.metadata.required === true);
         // Verificar si el ancho está bloqueado por la lógica espacial
         const isWidthLocked = (block.metadata && block.metadata.lockedWidth === true);
+
+        const labelOverride = (block.metadata && block.metadata.label) ? String(block.metadata.label) : "";
+        const helpText = (block.metadata && block.metadata.help) ? String(block.metadata.help) : "";
+        const isOrderLocked = (block.metadata && block.metadata.lockedOrder === true) || (window.currentSectionSchemaConstraints && window.currentSectionSchemaConstraints.allowReorder === false);
         
         const widthSelectStyle = isWidthLocked 
           ? "padding: 4px 8px; border: 1px solid #999; font-size: 10px; background: #f5f5f5; opacity: 0.7; cursor: not-allowed;"
           : "padding: 4px 8px; border: 1px solid #000; font-size: 10px; background: #fff;";
         
+        const headerTitle = labelOverride
+          ? `${escapeHtml(labelOverride)} <span style="font-size: 10px; color: #666; font-weight: normal;">(${escapeHtml(blockType)})</span>`
+          : escapeHtml(blockType);
+        const helpHtml = helpText ? `<div style="margin-top: 6px; font-size: 11px; color: #856404;">${escapeHtml(helpText)}</div>` : "";
+
         div.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; ${isRequired ? 'background: #fff3cd; padding: 8px; border: 1px solid #ffc107;' : ''}">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 11px; text-transform: uppercase; font-weight: bold;">${blockType}</span>
-              ${isRequired ? '<span style="font-size: 9px; color: #856404; background: #ffc107; padding: 2px 6px; border-radius: 2px; font-weight: bold;">REQUIRED</span>' : ''}
-              ${isWidthLocked ? '<span style="font-size: 9px; color: #666; background: #e0e0e0; padding: 2px 6px; border-radius: 2px; font-weight: bold;">LOCKED</span>' : ''}
+          <div style="margin-bottom: 10px; ${isRequired ? 'background: #fff3cd; padding: 8px; border: 1px solid #ffc107;' : ''}">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11px; text-transform: uppercase; font-weight: bold;">${headerTitle}</span>
+                ${isRequired ? '<span style="font-size: 9px; color: #856404; background: #ffc107; padding: 2px 6px; border-radius: 2px; font-weight: bold;">REQUIRED</span>' : ''}
+                ${isWidthLocked ? '<span style="font-size: 9px; color: #666; background: #e0e0e0; padding: 2px 6px; border-radius: 2px; font-weight: bold;">LOCKED</span>' : ''}
+                ${isOrderLocked ? '<span style="font-size: 9px; color: #666; background: #e0e0e0; padding: 2px 6px; border-radius: 2px; font-weight: bold;">ORDER LOCKED</span>' : ''}
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <label style="font-size: 10px; color: #666; margin-right: 5px;">Width:</label>
+                <select class="block-width-select" ${isWidthLocked ? 'disabled' : ''} style="${widthSelectStyle}" title="${isWidthLocked ? 'Width is locked by spatial logic' : 'Select block width'}">
+                  <option value="full" ${blockWidth === 'full' ? 'selected' : ''}>Full</option>
+                  <option value="half" ${blockWidth === 'half' ? 'selected' : ''}>Half</option>
+                  <option value="third" ${blockWidth === 'third' ? 'selected' : ''}>Third</option>
+                  <option value="two-thirds" ${blockWidth === 'two-thirds' ? 'selected' : ''}>Two Thirds</option>
+                </select>
+                <span style="font-size: 10px; color: #999;">Block ${index + 1}</span>
+              </div>
             </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-              <label style="font-size: 10px; color: #666; margin-right: 5px;">Width:</label>
-              <select class="block-width-select" ${isWidthLocked ? 'disabled' : ''} style="${widthSelectStyle}" title="${isWidthLocked ? 'Width is locked by spatial logic' : 'Select block width'}">
-                <option value="full" ${blockWidth === 'full' ? 'selected' : ''}>Full</option>
-                <option value="half" ${blockWidth === 'half' ? 'selected' : ''}>Half</option>
-                <option value="third" ${blockWidth === 'third' ? 'selected' : ''}>Third</option>
-                <option value="two-thirds" ${blockWidth === 'two-thirds' ? 'selected' : ''}>Two Thirds</option>
-              </select>
-              <span style="font-size: 10px; color: #999;">Block ${index + 1}</span>
-            </div>
+            ${helpHtml}
           </div>
           ${content}
         `;
@@ -5250,19 +5252,42 @@
           }
         }
 
-        div.querySelector(".move-block-up")?.addEventListener("click", () => {
-          if (index > 0) {
-            [postBlocks[index], postBlocks[index - 1]] = [postBlocks[index - 1], postBlocks[index]];
-            renderBlocks();
+        const moveUpBtn = div.querySelector(".move-block-up");
+        const moveDownBtn = div.querySelector(".move-block-down");
+        if (isOrderLocked) {
+          if (moveUpBtn) {
+            moveUpBtn.style.opacity = "0.5";
+            moveUpBtn.style.cursor = "not-allowed";
+            moveUpBtn.title = "Block order is locked for this section";
+            moveUpBtn.addEventListener("click", (e) => {
+              e.preventDefault();
+              showMessage("Block order is locked for this section", "error");
+            });
           }
-        });
+          if (moveDownBtn) {
+            moveDownBtn.style.opacity = "0.5";
+            moveDownBtn.style.cursor = "not-allowed";
+            moveDownBtn.title = "Block order is locked for this section";
+            moveDownBtn.addEventListener("click", (e) => {
+              e.preventDefault();
+              showMessage("Block order is locked for this section", "error");
+            });
+          }
+        } else {
+          moveUpBtn?.addEventListener("click", () => {
+            if (index > 0) {
+              [postBlocks[index], postBlocks[index - 1]] = [postBlocks[index - 1], postBlocks[index]];
+              renderBlocks();
+            }
+          });
 
-        div.querySelector(".move-block-down")?.addEventListener("click", () => {
-          if (index < postBlocks.length - 1) {
-            [postBlocks[index], postBlocks[index + 1]] = [postBlocks[index + 1], postBlocks[index]];
-            renderBlocks();
-          }
-        });
+          moveDownBtn?.addEventListener("click", () => {
+            if (index < postBlocks.length - 1) {
+              [postBlocks[index], postBlocks[index + 1]] = [postBlocks[index + 1], postBlocks[index]];
+              renderBlocks();
+            }
+          });
+        }
 
         // Actualizar bloque cuando cambia el contenido
         div.querySelectorAll(".block-content-input, .block-metadata-input").forEach(input => {
@@ -5726,7 +5751,7 @@
           blockType = "slideshow_image";
         } else {
           // Crear modal simple para elegir tipo de bloque
-          const types = [
+          const allTypes = [
             { value: "text", label: "Text (Rich Editor)" },
             { value: "image", label: "Image" },
             { value: "link", label: "Link (URL)" },
@@ -5735,6 +5760,11 @@
             { value: "embed_instagram", label: "Instagram Embed" },
             { value: "embed_soundcloud", label: "SoundCloud Embed" },
           ];
+
+          const allowed = window.currentSectionSchemaConstraints?.allowedBlocks;
+          const types = Array.isArray(allowed)
+            ? allTypes.filter(t => allowed.includes(t.value))
+            : allTypes;
 
           // Crear select temporal
           const select = document.createElement("select");
@@ -6227,7 +6257,7 @@
             
             titleQuillEditor.root.innerHTML = titleHtml || '';
           } else {
-            document.getElementById("title").value = post.title;
+          document.getElementById("title").value = post.title;
           }
           document.getElementById("slug").value = post.slug;
           document.getElementById("post-order").value = post.order ?? 0;
@@ -6243,7 +6273,7 @@
             try {
               const sectionId = post.sectionId;
               if (sectionId) {
-                const thumbRes = await fetchWithAuth(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
+                const thumbRes = await fetch(`${API_URL}/thumbnails?sectionId=${sectionId}`, {
                   credentials: "include"
                 });
                 if (thumbRes.ok) {
@@ -8034,6 +8064,9 @@
         try {
           console.log("[Load Template] Loading template for section:", sectionId);
           console.log("[Load Template] Current postBlocks length:", postBlocks.length);
+
+          // Reset constraints for each section load to avoid leaking settings across sections
+          window.currentSectionSchemaConstraints = null;
           
           const response = await fetch(`${API_URL}/sections/${sectionId}/template`, {
             credentials: 'include',
@@ -8050,6 +8083,9 @@
           
           const data = await response.json();
           console.log("[Load Template] Template data received:", data);
+
+          // Guardar constraints del schema (si vienen) para UI (allowedBlocks / allowReorder)
+          window.currentSectionSchemaConstraints = data.schemaConstraints || null;
           
           if (data.blockTemplate && data.blockTemplate.blocks && Array.isArray(data.blockTemplate.blocks)) {
             console.log("[Load Template] Template found with", data.blockTemplate.blocks.length, "blocks");
@@ -8063,6 +8099,9 @@
                 metadata: {
                   required: blockDef.required || false,
                   width: blockDef.width || "full",
+                  label: blockDef.label || null,
+                  help: blockDef.help || null,
+                  lockedOrder: blockDef.lockedOrder === true,
                 },
               };
               
@@ -8116,6 +8155,7 @@
           } else {
             console.log("[Load Template] No template blocks defined (freedom mode)");
             console.log("[Load Template] blockTemplate value:", data.blockTemplate);
+            window.currentSectionSchemaConstraints = data.schemaConstraints || null;
           }
         } catch (err) {
           console.error("[Load Template] Error loading template:", err);
@@ -8318,4 +8358,3 @@
   </body>
 </html>
 
-<!-- Deploy timestamp: 1768098220 -->

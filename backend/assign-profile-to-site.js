@@ -6,20 +6,18 @@ async function assignProfileToSite() {
   try {
     console.log('🔗 Assigning Frontend Profile to Site...\n');
 
-    // Buscar el site "default" o el primer site disponible
-    let site = await prisma.site.findFirst({
-      where: {
-        slug: {
-          startsWith: 'default',
-        },
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    });
+    const arg1 = process.argv[2];
+    const arg2 = process.argv[3];
+    const hasExplicitSiteId = arg1 && /^\d+$/.test(arg1);
+    const siteIdArg = hasExplicitSiteId ? parseInt(arg1) : null;
 
-    if (!site) {
-      // Si no hay site con slug "default", tomar el primero
+    const desiredProfileName = (hasExplicitSiteId ? arg2 : arg1) || process.env.PROFILE_NAME || 'default-v1';
+
+    // Buscar el site (por id si se pasa, o el primero disponible)
+    let site = null;
+    if (siteIdArg) {
+      site = await prisma.site.findUnique({ where: { id: siteIdArg } });
+    } else {
       site = await prisma.site.findFirst({
         orderBy: {
           createdAt: 'asc',
@@ -28,13 +26,13 @@ async function assignProfileToSite() {
     }
 
     if (!site) {
-      console.log('❌ No sites found. Please create a site first.');
+      console.log(siteIdArg
+        ? `❌ Site not found (ID: ${siteIdArg}).`
+        : '❌ No sites found. Please create a site first.');
       return;
     }
 
     console.log(`📌 Found site: "${site.name}" (ID: ${site.id}, slug: ${site.slug})`);
-
-    const desiredProfileName = process.argv[2] || process.env.PROFILE_NAME || 'default-v1';
 
     // Buscar el profile deseado (por nombre) o el primero disponible
     let profile = await prisma.frontendProfile.findUnique({

@@ -1,0 +1,42 @@
+{
+  "name": "cineclube@1.0.0",
+  "description": "Cineclube profile: Sessões with required date + description blocks and optional image.",
+  "version": "1.0.0",
+  "deprecated": false,
+  "sectionSchemas": {
+    "cineclube.session": {
+      "label": "Cineclube — Sessão (Data + Descrição + Imagem)",
+      "postType": "page",
+      "defaultTemplate": {
+        "blocks": [
+          {
+            "type": "text",
+            "required": true,
+            "width": "full",
+            "label": "Data",
+            "help": "Escreve a data/horário e cidade. Ex: 29 de Outubro, 2025 às 18:30h em Lisboa",
+            "lockedOrder": true
+          },
+          {
+            "type": "text",
+            "required": true,
+            "width": "full",
+            "label": "Descrição",
+            "help": "Descrição completa da sessão (texto principal).",
+            "lockedOrder": true
+          },
+          {
+            "type": "image",
+            "required": false,
+            "width": "full",
+            "label": "Imagem (opcional)",
+            "help": "Imagem/still/cartaz para a sessão (opcional).",
+            "lockedOrder": true
+          }
+        ]
+      },
+      "allowedBlocks": ["text", "image"],
+      "allowReorder": false
+    }
+  }
+}
