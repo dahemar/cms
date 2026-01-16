@@ -96,9 +96,12 @@ syncProfilesToDb(prisma)
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-  : []; // En desarrollo, se permitirá cualquier origen mediante la función
+const allowedOrigins = (() => {
+  if (process.env.CORS_ORIGIN) return [process.env.CORS_ORIGIN.trim()];
+  if (process.env.ALLOWED_ORIGINS)
+    return process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim());
+  return []; // En desarrollo, se permitirá cualquier origen mediante la función
+})();
 
 // Log para debugging en producción
 if (isProduction) {
@@ -149,6 +152,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+// Ensure preflight OPTIONS requests are answered with the same CORS policy
+app.options("*", cors(corsOptions));
 // Aumentar límite del body parser para permitir imágenes base64 grandes
 app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
