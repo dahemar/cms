@@ -8068,9 +8068,7 @@
           // Reset constraints for each section load to avoid leaking settings across sections
           window.currentSectionSchemaConstraints = null;
           
-          const response = await fetch(`${API_URL}/sections/${sectionId}/template`, {
-            credentials: 'include',
-          });
+          const response = await fetchWithAuth(`${API_URL}/sections/${sectionId}/template`);
           
           console.log("[Load Template] Response status:", response.status);
           
