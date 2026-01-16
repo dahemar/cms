@@ -9,37 +9,6 @@
     "dev:serverless-paranoia": "nodemon --delay 100 --exitcrash index.js",
     "seed": "node seed.js",
     "prisma:migrate": "prisma migrate dev --name init",
-    "prisma:generate": "prisma generate"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "@prisma/client": "^6.19.1",
-    "bcrypt": "^6.0.0",
-    "cors": "^2.8.5",
-    "crypto": "^1.0.1",
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.2.1",
-    "express-session": "^1.18.2",
-    "ioredis": "^5.9.2",
-    "jsonwebtoken": "^9.0.3",
-    "nodemailer": "^7.0.12",
-    "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0",
-    "prisma": "^6.19.1"
-  }
-}
-{
-  "name": "backend",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "dev": "node index.js",
-    "seed": "node seed.js",
-    "prisma:migrate": "prisma migrate dev --name init",
     "prisma:generate": "prisma generate",
     "build": "prisma generate",
     "vercel-build": "DATABASE_URL=${DATABASE_URL:-'postgresql://dummy:dummy@localhost:5432/dummy'} prisma generate"
@@ -58,11 +27,13 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.18.2",
-    "jsonwebtoken": "^9.0.2",
+    "ioredis": "^5.9.2",
+    "redis": "^4.7.0",
+    "jsonwebtoken": "^9.0.3",
     "nodemailer": "^7.0.12",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "prisma": "^6.19.1",
-    "redis": "^4.7.0"
+    "prisma": "^6.19.1"
   }
 }
+
