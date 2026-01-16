@@ -10,11 +10,76 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const rateLimit = require("express-rate-limit");
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
+const { AsyncLocalStorage } = require('async_hooks');
 const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailService");
 const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
 
 const app = express();
-const prisma = new PrismaClient();
+
+// AsyncLocalStorage used to correlate Prisma queries to the originating request
+const als = new AsyncLocalStorage();
+
+// Enable Prisma query events so we can print SQL for diagnostics.
+// Also use a middleware below to accumulate per-request durations.
+const prisma = new PrismaClient({
+  log: [
+    { level: 'query', emit: 'event' },
+    { level: 'info', emit: 'event' },
+    { level: 'warn', emit: 'event' },
+    { level: 'error', emit: 'event' }
+  ]
+});
+
+// Prisma event: print SQL (truncated) with reported duration
+prisma.$on('query', (e) => {
+  try {
+    const snippet = (e.query || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    console.log(`[Prisma SQL] ${snippet} -- ${e.duration}ms`);
+
+    // Try to attribute this query to the current request using AsyncLocalStorage
+    try {
+      const store = als.getStore();
+      const req = store && store.req;
+      if (req) {
+        req._prismaQueries = (req._prismaQueries || 0) + 1;
+        req._prismaDur = (req._prismaDur || 0) + (e.duration || 0);
+        if (!req._firstQueryAt) req._firstQueryAt = Date.now() - (e.duration || 0);
+      }
+    } catch (innerErr) {
+      // ignore
+    }
+  } catch (err) {
+    console.log('[Prisma SQL] event error', err?.message || err);
+  }
+});
+
+// Prisma middleware ($use) may not be available in some client versions/environments.
+// If it exists, install a middleware to measure accurate durations; otherwise rely on the $on('query') handler above.
+if (typeof prisma.$use === 'function') {
+  try {
+    prisma.$use(async (params, next) => {
+      const store = als.getStore();
+      const start = Date.now();
+      const result = await next(params);
+      const dur = Date.now() - start;
+      try {
+        const req = store && store.req;
+        if (req) {
+          req._prismaQueries = (req._prismaQueries || 0) + 1;
+          req._prismaDur = (req._prismaDur || 0) + dur;
+          if (!req._firstQueryAt) req._firstQueryAt = start;
+        }
+      } catch (err) {
+        // ignore
+      }
+      return result;
+    });
+  } catch (err) {
+    console.warn('[Prisma] failed to install $use middleware, continuing with $on(query) fallback', err?.message || err);
+  }
+} else {
+  console.warn('[Prisma] $use middleware not available; using $on(query) accumulation fallback');
+}
 
 // Profiles are read-only and loaded from disk (backend/profiles/*.json).
 // We keep a DB mirror so sites can reference a profile via FK, but disk remains the source of truth.
@@ -60,7 +125,7 @@ if (isProduction && !JWT_SECRET) {
 }
 
 // Configurar CORS con función dinámica para origin (robusto en Vercel serverless)
-const baseCorsOptions = {
+const corsOptions = {
   origin: (origin, callback) => {
     // Permitir requests sin origin (SSR, curl, Postman, etc.)
     if (!origin) {
@@ -83,22 +148,45 @@ const baseCorsOptions = {
   exposedHeaders: ['Set-Cookie'],
 };
 
-app.use((req, res, next) => {
-  const corsMiddleware = cors({
-    ...baseCorsOptions,
-    origin: (origin, callback) => {
-      const sameHostOrigin = req.headers.host ? `${req.protocol}://${req.headers.host}` : null;
-      if (origin && sameHostOrigin && origin === sameHostOrigin) {
-        return callback(null, true);
-      }
-      return baseCorsOptions.origin(origin, callback);
-    },
-  });
-  corsMiddleware(req, res, next);
-});
+app.use(cors(corsOptions));
 // Aumentar límite del body parser para permitir imágenes base64 grandes
 app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Instrumentation middleware: correlate async work with the current request
+app.use((req, res, next) => {
+  // Initialize per-request metrics
+  const store = { req };
+  // Use enterWith for broader async context propagation across libraries
+  try {
+    als.enterWith(store);
+  } catch (err) {
+    // Fallback to run if enterWith is not available for some reason
+    try {
+      als.run(store, () => {});
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  req._t0 = Date.now();
+  req._prismaDur = 0;
+  req._prismaQueries = 0;
+  req._firstQueryAt = null;
+
+  // When the response finishes, log timing summary
+  res.on('finish', () => {
+    try {
+      const total = Date.now() - req._t0;
+      const firstQueryOffset = req._firstQueryAt ? (req._firstQueryAt - req._t0) : null;
+      console.log(`[REQ] ${req.method} ${req.originalUrl} status=${res.statusCode} total=${total}ms prismaQueries=${req._prismaQueries} prismaTime=${req._prismaDur}ms firstQueryOffset=${firstQueryOffset}`);
+    } catch (err) {
+      console.warn('[REQ] instrumentation log failed', err?.message || err);
+    }
+  });
+
+  next();
+});
 
 // IMPORTANTE: express-session DEBE estar ANTES de Passport
 // Configurar sesiones
@@ -204,40 +292,78 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 // ==================== CACHE DE CONTENIDO ====================
 // Cache simple en memoria (en producción, usar Redis)
 const contentCache = new Map();
-// En desarrollo, el cache suele confundir (stale reads al borrar/editar). Por defecto lo desactivamos.
-// En producción, mantener un TTL razonable.
+// En desarrollo, el cache suele confundir (stale reads al borrar/editar).
+// Para pruebas de rendimiento locales, usar un TTL corto (10s) en dev para medir mejora.
 const CACHE_TTL = (() => {
   if (process.env.CACHE_TTL !== undefined) {
     const ttl = parseInt(process.env.CACHE_TTL);
     return Number.isFinite(ttl) ? ttl : 0;
   }
-  return isProduction ? 300000 : 0; // 5 min en prod, 0 en dev
+  // Por defecto: 5min en prod, 10s en desarrollo para pruebas (puedes cambiar con CACHE_TTL env)
+  return isProduction ? 300000 : 10000;
 })();
 
 function getCacheKey(endpoint, params) {
   return `${endpoint}:${JSON.stringify(params)}`;
 }
 
-function getCached(key) {
-  if (CACHE_TTL <= 0) return null;
-  const cached = contentCache.get(key);
-  if (!cached) return null;
-  
-  // Verificar si el cache ha expirado
-  if (Date.now() - cached.timestamp > CACHE_TTL) {
-    contentCache.delete(key);
-    return null;
+function getCacheKey(endpoint, params) {
+  return `${endpoint}:${JSON.stringify(params)}`;
+}
+
+// Optional Redis client for production (shared cache across instances)
+let redisClient = null;
+if (isProduction && process.env.REDIS_URL) {
+  try {
+    const IORedis = require('ioredis');
+    redisClient = new IORedis(process.env.REDIS_URL);
+    redisClient.on('error', (e) => console.warn('[Redis] error', e?.message || e));
+    console.log('[Redis] initialized');
+  } catch (err) {
+    console.warn('[Redis] ioredis not installed or failed to init:', err?.message || err);
+    redisClient = null;
   }
-  
-  return cached.data;
 }
 
 function setCache(key, data) {
   if (CACHE_TTL <= 0) return;
+  // Local memory cache (fast local fallback)
   contentCache.set(key, {
     data,
     timestamp: Date.now(),
   });
+
+  // If Redis is configured, store there as well (fire-and-forget)
+  if (redisClient) {
+    try {
+      redisClient.set(key, JSON.stringify(data), 'PX', CACHE_TTL).catch((e) => {
+        console.warn('[Redis] set error', e?.message || e);
+      });
+    } catch (err) {
+      console.warn('[Redis] set failed', err?.message || err);
+    }
+  }
+}
+
+function getCached(key) {
+  if (CACHE_TTL <= 0) return null;
+  // Prefer Redis in production if available (synchronous fallback to memory)
+  if (redisClient) {
+    try {
+      // Note: route handlers that use Redis call redisClient.get directly (async) where needed.
+      // Here keep memory fallback for simple sync callers.
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  const cached = contentCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > CACHE_TTL) {
+    contentCache.delete(key);
+    return null;
+  }
+  return cached.data;
 }
 
 function invalidateCache(pattern) {
@@ -248,6 +374,7 @@ function invalidateCache(pattern) {
   if (siteIdMatch) {
     const endpoint = siteIdMatch[1];
     const targetSiteId = parseInt(siteIdMatch[2]);
+    // Invalidate local memory cache
     for (const key of contentCache.keys()) {
       if (!key.startsWith(`${endpoint}:`)) continue;
       const jsonPart = key.slice(endpoint.length + 1);
@@ -260,6 +387,32 @@ function invalidateCache(pattern) {
         // Si no es JSON, ignorar.
       }
     }
+
+    // If Redis is configured, scan and delete matching keys in Redis asynchronously
+    if (redisClient) {
+      (async () => {
+        try {
+          let cursor = '0';
+          do {
+            const [nextCursor, keys] = await redisClient.scan(cursor, 'MATCH', `${endpoint}:*`, 'COUNT', 1000);
+            cursor = nextCursor;
+            for (const key of keys) {
+              const jsonPart = key.slice(endpoint.length + 1);
+              try {
+                const params = JSON.parse(jsonPart);
+                if (params && params.siteId === targetSiteId) {
+                  await redisClient.del(key);
+                }
+              } catch (e) {
+                // ignore parse errors
+              }
+            }
+          } while (cursor !== '0');
+        } catch (e) {
+          console.warn('[Redis] invalidateCache(siteId) failed', e?.message || e);
+        }
+      })();
+    }
     return;
   }
 
@@ -271,8 +424,30 @@ function invalidateCache(pattern) {
         contentCache.delete(key);
       }
     }
+
+    if (redisClient) {
+      // Async SCAN+DEL matching pattern
+      (async () => {
+        try {
+          let cursor = '0';
+          const match = pattern.replace(/\*/g, '*');
+          do {
+            const [nextCursor, keys] = await redisClient.scan(cursor, 'MATCH', match, 'COUNT', 1000);
+            cursor = nextCursor;
+            if (keys && keys.length > 0) {
+              await Promise.all(keys.map(k => redisClient.del(k)));
+            }
+          } while (cursor !== '0');
+        } catch (e) {
+          console.warn('[Redis] invalidateCache(pattern) failed', e?.message || e);
+        }
+      })();
+    }
   } else {
     contentCache.delete(pattern);
+    if (redisClient) {
+      redisClient.del(pattern).catch((e) => console.warn('[Redis] del error', e?.message || e));
+    }
   }
 }
 
@@ -1338,13 +1513,28 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
       return res.json({ posts: [post], pagination: { page: 1, limit: 1, total: 1, totalPages: 1 } });
     }
     
-    // Intentar obtener del cache (solo para posts publicados sin búsqueda)
-    const cacheKey = getCacheKey("posts", { siteId, page, limit, search, tagId, type, sectionId });
+    // Intentar obtener del cache (solo para posts publicados sin búsqueda ni filtros complejos)
+    // Usamos una key centrada en sectionId/siteId/limit/page para obtener comportamiento estable.
+    const cacheKey = getCacheKey("posts", { sectionId, siteId, page, limit });
     if (!search && !tagId && !type) { // Solo cachear queries simples
-      const cached = getCached(cacheKey);
-      if (cached) {
-        console.log("[GET /posts] Cache hit:", cacheKey);
-        return res.json(cached);
+      if (redisClient) {
+        try {
+          const cachedJson = await redisClient.get(cacheKey);
+          if (cachedJson) {
+            console.log("[GET /posts] Redis cache hit:", cacheKey);
+            return res.json(JSON.parse(cachedJson));
+          }
+          console.log("[GET /posts] Redis cache miss:", cacheKey);
+        } catch (e) {
+          console.warn('[Redis] get error', e?.message || e);
+        }
+      } else {
+        const cached = getCached(cacheKey);
+        if (cached) {
+          console.log("[GET /posts] Cache hit:", cacheKey);
+          return res.json(cached);
+        }
+        console.log("[GET /posts] Cache miss:", cacheKey);
       }
     }
     
@@ -1412,6 +1602,7 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
     // Guardar en cache (solo para queries simples)
     if (!search && !tagId && !type) {
       setCache(cacheKey, result);
+      console.log("[GET /posts] Cache set:", cacheKey);
     }
     
     res.json(result);
@@ -3325,6 +3516,27 @@ app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) 
 
     console.log("[GET /sections] Fetching sections for siteId:", siteId);
     
+    // Try cache first
+    const cacheKey = getCacheKey("sections", { siteId });
+    if (redisClient) {
+      try {
+        const cachedJson = await redisClient.get(cacheKey);
+        if (cachedJson) {
+          console.log("[GET /sections] Redis cache hit:", cacheKey);
+          return res.json(JSON.parse(cachedJson));
+        }
+        console.log("[GET /sections] Redis cache miss:", cacheKey);
+      } catch (e) {
+        console.warn('[Redis] get error', e?.message || e);
+      }
+    } else {
+      const cached = getCached(cacheKey);
+      if (cached) {
+        console.log("[GET /sections] Cache hit:", cacheKey);
+        return res.json(cached);
+      }
+    }
+
     const sections = await prisma.section.findMany({
       where: { 
         siteId: siteId,
@@ -3345,6 +3557,17 @@ app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) 
     console.log("[GET /sections] Sections found:", sections.length);
     console.log("[GET /sections] ========== FIN ==========");
     
+    // Store in cache
+    setCache(cacheKey, sections);
+    // If Redis is configured, also persist
+    if (redisClient) {
+      try {
+        redisClient.set(cacheKey, JSON.stringify(sections), 'PX', CACHE_TTL).catch((e) => console.warn('[Redis] set error', e?.message || e));
+      } catch (e) {
+        console.warn('[Redis] set error', e?.message || e);
+      }
+    }
+
     res.json(sections);
   } catch (err) {
     console.error("[GET /sections] ERROR:", err);
@@ -3362,19 +3585,33 @@ app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) 
 });
 
 // GET /sections/:id/template - Obtener el template de bloques de una sección
-app.get("/sections/:id/template", async (req, res) => {
+app.get("/sections/:id/template", requireAuth, async (req, res) => {
   try {
-    console.log("[GET /sections/:id/template] ========== INICIO (public) ==========");
+    console.log("[GET /sections/:id/template] ========== INICIO ==========");
     console.log("[GET /sections/:id/template] Request params:", req.params);
-
+    console.log("[GET /sections/:id/template] Session userId:", req.session ? req.session.userId : "no session");
+    
+    // Cargar usuario desde la sesión
+    const user = await prisma.user.findUnique({
+      where: { id: req.session.userId },
+      select: { id: true, email: true, isAdmin: true },
+    });
+    
+    if (!user) {
+      console.error("[GET /sections/:id/template] User not found");
+      return res.status(401).json({ error: "User not found" });
+    }
+    
+    console.log("[GET /sections/:id/template] User:", user.id, "isAdmin:", user.isAdmin);
+    
     const sectionId = parseInt(req.params.id);
     console.log("[GET /sections/:id/template] Parsed sectionId:", sectionId);
-
+    
     if (!sectionId || isNaN(sectionId)) {
       console.error("[GET /sections/:id/template] Invalid section ID");
       return res.status(400).json({ error: "Invalid section ID" });
     }
-
+    
     const section = await prisma.section.findUnique({
       where: { id: sectionId },
       select: {
@@ -3386,15 +3623,32 @@ app.get("/sections/:id/template", async (req, res) => {
         siteId: true,
       },
     });
-
+    
     if (!section) {
       console.error("[GET /sections/:id/template] Section not found");
       return res.status(404).json({ error: "Section not found" });
     }
-
+    
     console.log("[GET /sections/:id/template] Section found:", section.name, "siteId:", section.siteId);
-
-    // Public endpoint: return the resolved template regardless of authentication.
+    
+    // Verificar permisos del usuario
+    if (!user.isAdmin) {
+      const userSite = await prisma.userSite.findFirst({
+        where: {
+          userId: user.id,
+          siteId: section.siteId,
+        },
+      });
+      
+      if (!userSite) {
+        console.error("[GET /sections/:id/template] Access denied - user not assigned to site");
+        return res.status(403).json({ error: "Access denied to this section" });
+      }
+    }
+    
+    console.log("[GET /sections/:id/template] Access granted, returning template");
+    console.log("[GET /sections/:id/template] blockTemplate:", section.blockTemplate ? "exists" : "null");
+    
     const resolvedTemplate = await resolveTemplateForSection(section.siteId, section);
 
     let schemaConstraints = null;
@@ -3610,6 +3864,21 @@ app.post("/sections", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
       },
     });
 
+    // Invalidate sections cache for this site
+    console.log(`[POST /sections] Invalidating cache for siteId: ${siteId}`);
+    invalidateCache(getCacheKey('sections', { siteId }));
+    invalidateCache(`sections:*siteId:${siteId}*`);
+    // If posts were assigned to this section, also invalidate posts cache
+    invalidateCache(`posts:*siteId:${siteId}*`);
+    console.log(`[POST /sections] Cache invalidated`);
+
+    // Audit log
+    await logAuditEvent(req, "section_created", "section", section.id, {
+      name: section.name,
+      slug: section.slug,
+      postType: section.postType,
+    });
+
     res.status(201).json(section);
   } catch (err) {
     if (err.code === "P2002") {
@@ -3678,6 +3947,24 @@ app.put("/sections/:id", requireAuth, async (req, res) => {
       },
     });
 
+    // Invalidate sections cache for this site
+    console.log(`[PUT /sections/:id] Invalidating cache for siteId: ${existing.siteId}`);
+    invalidateCache(getCacheKey('sections', { siteId: existing.siteId }));
+    invalidateCache(`sections:*siteId:${existing.siteId}*`);
+    // If posts are assigned to this section, also invalidate posts cache
+    invalidateCache(`posts:*siteId:${existing.siteId}*`);
+    console.log(`[PUT /sections/:id] Cache invalidated`);
+
+    // Audit log
+    await logAuditEvent(req, "section_updated", "section", section.id, {
+      name: section.name,
+      slug: section.slug,
+      changes: {
+        nameChanged: name !== existing.name,
+        postTypeChanged: postType !== undefined && postType !== existing.postType,
+      },
+    });
+
     res.json(section);
   } catch (err) {
     if (err.code === "P2002") {
@@ -3728,6 +4015,20 @@ app.delete("/sections/:id", adminRateLimiter, requireAuth, async (req, res) => {
     }
 
     await prisma.section.delete({ where: { id } });
+
+    // Invalidate sections cache for this site
+    console.log(`[DELETE /sections/:id] Invalidating cache for siteId: ${existing.siteId}`);
+    invalidateCache(getCacheKey('sections', { siteId: existing.siteId }));
+    invalidateCache(`sections:*siteId:${existing.siteId}*`);
+    // Also invalidate posts cache (posts from deleted section)
+    invalidateCache(`posts:*siteId:${existing.siteId}*`);
+    console.log(`[DELETE /sections/:id] Cache invalidated`);
+
+    // Audit log
+    await logAuditEvent(req, "section_deleted", "section", id, {
+      name: existing.name,
+      slug: existing.slug,
+    });
 
     res.json({ message: "Section deleted successfully" });
   } catch (err) {
