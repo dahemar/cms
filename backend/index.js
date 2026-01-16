@@ -152,8 +152,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// Ensure preflight OPTIONS requests are answered with the same CORS policy
-app.options("*", cors(corsOptions));
 // Aumentar límite del body parser para permitir imágenes base64 grandes
 app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
