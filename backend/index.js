@@ -1611,16 +1611,9 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
       console.log("[GET /posts] Cache set:", cacheKey);
     }
     
-    // Set Cache-Control for CDN/edge caching on all successful responses (public endpoint)
-    // Use individual directives to ensure Vercel doesn't strip them
-    const cacheControl = [
-      'public',
-      's-maxage=60',
-      'stale-while-revalidate=300'
-    ].join(', ');
-    res.setHeader('Cache-Control', cacheControl);
-    console.log('[GET /posts] Setting Cache-Control:', cacheControl);
-    res.json(result);
+    // Set Cache-Control for CDN/edge caching - must be right before res.json()
+    res.setHeader('Cache-Control', 'public,s-maxage=60,stale-while-revalidate=300');
+    return res.json(result);
   } catch (err) {
     console.error("[GET /posts] ERROR:", err);
     console.error("[GET /posts] Error stack:", err.stack);
