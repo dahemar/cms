@@ -76,6 +76,28 @@ node server.js
 Site frontend accessible at:
 - `http://localhost:8001/index.html`
 
+## Prerender on Content Changes (Local)
+
+You can automatically regenerate `public/posts.html` after every post mutation.
+
+1. Enable the hook:
+   ```bash
+   export PRERENDER_ON_MUTATION=true
+   ```
+2. (Optional) Set debounce time in milliseconds (default: 500):
+   ```bash
+   export PRERENDER_DEBOUNCE_MS=500
+   ```
+3. Start the servers normally:
+   ```bash
+   ./start-servers.sh
+   ```
+
+This will run the prerender script after `POST/PUT/DELETE /posts`.
+
+> In production, the hook is disabled by default. If you need it, set:
+> `PRERENDER_ALLOW_PROD=true` in addition to `PRERENDER_ON_MUTATION=true`.
+
 ## Deployment
 
 ### Vercel Deployment

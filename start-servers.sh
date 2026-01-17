@@ -18,7 +18,7 @@ kill_port() {
 
 # Matar procesos existentes
 kill_port 8000
-kill_port 8001
+kill_port 8002
 kill_port 3000
 
 # Iniciar backend
@@ -37,12 +37,12 @@ ADMIN_PID=$!
 cd ..
 sleep 2
 
-# Iniciar site frontend server
-echo "🌐 Starting site frontend server (port 8001)..."
-cd sites/default
+# Iniciar site frontend server (cineclub)
+echo "🌐 Starting site frontend server (port 8002)..."
+cd ../cineclub
 node server.js &
 SITE_PID=$!
-cd ../../..
+cd ../cms
 sleep 2
 
 echo ""
@@ -52,7 +52,7 @@ echo "📍 URLs:"
 echo "   Backend API:  http://localhost:3000"
 echo "   Admin Login:  http://localhost:8000/login.html"
 echo "   Admin Panel:  http://localhost:8000/admin.html"
-echo "   Site Frontend: http://localhost:8001/index.html"
+echo "   Site Frontend: http://localhost:8002/index.html"
 echo ""
 echo "⚠️  Press Ctrl+C to stop all servers"
 echo ""

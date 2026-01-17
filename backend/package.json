@@ -28,12 +28,11 @@
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.18.2",
     "ioredis": "^5.9.2",
-    "redis": "^4.7.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^7.0.12",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "prisma": "^6.19.1"
+    "prisma": "^6.19.1",
+    "redis": "^4.7.0"
   }
 }
-

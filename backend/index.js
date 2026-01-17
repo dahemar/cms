@@ -11,6 +11,8 @@ const rateLimit = require("express-rate-limit");
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const { AsyncLocalStorage } = require('async_hooks');
+const { exec } = require('child_process');
+const path = require('path');
 const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailService");
 const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
 
@@ -100,6 +102,37 @@ syncProfilesToDb(prisma)
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
+const PRERENDER_ON_MUTATION = process.env.PRERENDER_ON_MUTATION === "true";
+const PRERENDER_ALLOW_PROD = process.env.PRERENDER_ALLOW_PROD === "true";
+const PRERENDER_DEBOUNCE_MS = parseInt(process.env.PRERENDER_DEBOUNCE_MS || "500", 10);
+const PRERENDER_SCRIPT_PATH = path.resolve(__dirname, "..", "scripts", "prerender_posts.js");
+let prerenderTimer = null;
+
+function triggerPrerender(reason, meta = {}) {
+  if (!PRERENDER_ON_MUTATION) return;
+  if (isProduction && !PRERENDER_ALLOW_PROD) {
+    console.log("[Prerender] Skipped in production (set PRERENDER_ALLOW_PROD=true to enable)");
+    return;
+  }
+
+  const run = () => {
+    const startedAt = Date.now();
+    exec(`node "${PRERENDER_SCRIPT_PATH}"`, { cwd: path.resolve(__dirname, "..") }, (err, stdout, stderr) => {
+      const duration = Date.now() - startedAt;
+      if (err) {
+        console.error("[Prerender] Error:", { reason, durationMs: duration, error: err.message });
+        if (stderr) console.error("[Prerender] stderr:", stderr.trim());
+        return;
+      }
+      console.log("[Prerender] Completed", { reason, durationMs: duration, ...meta });
+      if (stdout) console.log("[Prerender] stdout:", stdout.trim());
+      if (stderr) console.warn("[Prerender] stderr:", stderr.trim());
+    });
+  };
+
+  if (prerenderTimer) clearTimeout(prerenderTimer);
+  prerenderTimer = setTimeout(run, Number.isFinite(PRERENDER_DEBOUNCE_MS) ? PRERENDER_DEBOUNCE_MS : 500);
+}
 const allowedOrigins = (() => {
   if (process.env.CORS_ORIGIN) return [process.env.CORS_ORIGIN.trim()];
   if (process.env.ALLOWED_ORIGINS)
@@ -2072,6 +2105,7 @@ app.post("/posts", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (
 
     // Invalidar cache de posts para este sitio
     invalidateCache(`posts:*siteId:${siteId}*`);
+    triggerPrerender("post_created", { postId: post.id, siteId });
     
     // Registrar en auditoría
     await logAuditEvent(req, "post_created", "post", post.id, {
@@ -2355,6 +2389,7 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     // También invalidar cache más general para asegurar que se actualice
     invalidateCache(`posts:*`);
     console.log(`[PUT /posts/:id] Cache invalidated`);
+    triggerPrerender("post_updated", { postId: post.id, siteId });
     
     // Registrar en auditoría
     await logAuditEvent(req, "post_updated", "post", post.id, {
@@ -2427,6 +2462,7 @@ app.delete("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, a
     invalidateCache(`posts:*siteId:${siteId}*`);
     // También invalidar cache general para evitar lecturas stale
     invalidateCache(`posts:*`);
+    triggerPrerender("post_deleted", { postId: postInfo.id, siteId });
     
     // Registrar en auditoría
     await logAuditEvent(req, "post_deleted", "post", postInfo.id, {
