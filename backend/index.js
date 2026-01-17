@@ -18,6 +18,7 @@ const app = express();
 
 // Disable automatic ETag generation by Express to prevent default Cache-Control headers
 app.set('etag', false);
+// Force rebuild v2: ensure Vercel uses latest code
 
 // Configurar AsyncLocalStorage para instrumentación
 const als = new AsyncLocalStorage();
