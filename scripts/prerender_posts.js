@@ -38,7 +38,9 @@ function renderSession(post, index) {
   const textBlocks = getBlocksByType(post.blocks, 'text');
   const horarioText = textBlocks[0]?.content || post.metadata?.horario || '';
   const description = textBlocks[1]?.content || textBlocks[0]?.content || post.content || '';
-  const images = getBlocksByType(post.blocks, 'image');
+  // Buscar imágenes: permitir cualquier número, filtrar entradas vacías
+  const imagesRaw = getBlocksByType(post.blocks, 'image');
+  const images = imagesRaw.filter(img => img && img.content && String(img.content).trim());
   const sessionNum = post.order !== undefined && post.order >= 0 ? `Sessão ${post.order + 1}` : `Sessão ${index + 1}`;
   const imgContainerClass = images.length === 2 ? 'imagem-sessao imagem-sessao--two' : 'imagem-sessao';
   const primaryThumb = images[0]?.content || '';
