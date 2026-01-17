@@ -16,7 +16,10 @@ const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles
 
 const app = express();
 
-// AsyncLocalStorage used to correlate Prisma queries to the originating request
+// Disable automatic ETag generation by Express to prevent default Cache-Control headers
+app.set('etag', false);
+
+// Configurar AsyncLocalStorage para instrumentación
 const als = new AsyncLocalStorage();
 
 // Enable Prisma query events so we can print SQL for diagnostics.
