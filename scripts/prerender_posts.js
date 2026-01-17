@@ -67,7 +67,7 @@ function renderSession(post, index) {
 }
 
 async function prerender() {
-  const url = `http://localhost:3000/posts?siteId=${SITE_ID}&sectionId=${SECTION_ID}&page=1&limit=${LIMIT}`;
+  const url = `http://localhost:3000/posts?siteId=${SITE_ID}&sectionId=${SECTION_ID}&page=1&limit=${LIMIT}&includeTags=false&includeSection=false&includeBlocks=true`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status} ${res.statusText}`);

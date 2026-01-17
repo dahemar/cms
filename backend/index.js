@@ -1520,6 +1520,9 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
     const type = req.query.type || null;
     const sectionId = req.query.sectionId ? parseInt(req.query.sectionId) : null;
     const slug = req.query.slug || null; // Búsqueda por slug (para posts individuales)
+    const includeTags = req.query.includeTags !== undefined ? req.query.includeTags === "true" : true;
+    const includeSection = req.query.includeSection !== undefined ? req.query.includeSection === "true" : true;
+    const includeBlocks = req.query.includeBlocks !== undefined ? req.query.includeBlocks === "true" : true;
     
     // siteId viene del middleware resolveSiteFromDomain
     const siteId = req.siteId;
@@ -1538,11 +1541,9 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
           published: true,
         },
         include: {
-          tags: true,
-          section: true,
-          blocks: {
-            orderBy: { order: "asc" },
-          },
+          ...(includeTags ? { tags: true } : {}),
+          ...(includeSection ? { section: true } : {}),
+          ...(includeBlocks ? { blocks: { orderBy: { order: "asc" } } } : {}),
         },
       });
       
@@ -1555,7 +1556,7 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
     
     // Intentar obtener del cache (solo para posts publicados sin búsqueda ni filtros complejos)
     // Usamos una key centrada en sectionId/siteId/limit/page para obtener comportamiento estable.
-    const cacheKey = getCacheKey("posts", { sectionId, siteId, page, limit });
+    const cacheKey = getCacheKey("posts", { sectionId, siteId, page, limit, includeTags, includeSection, includeBlocks });
     if (!search && !tagId && !type) { // Solo cachear queries simples
       if (redisClient) {
         try {
@@ -1616,11 +1617,9 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
       prisma.post.findMany({
         where,
         include: {
-          tags: true,
-          section: true,
-          blocks: {
-            orderBy: { order: "asc" },
-          },
+          ...(includeTags ? { tags: true } : {}),
+          ...(includeSection ? { section: true } : {}),
+          ...(includeBlocks ? { blocks: { orderBy: { order: "asc" } } } : {}),
         },
         orderBy: [{ order: "asc" }, { createdAt: "desc" }],
         skip,
