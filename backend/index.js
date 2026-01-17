@@ -1609,7 +1609,8 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
     }
     
     // Set Cache-Control for CDN/edge caching on all successful responses (public endpoint)
-    res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+    console.log('[GET /posts] Setting Cache-Control:', res.getHeader('Cache-Control'));
     res.json(result);
   } catch (err) {
     console.error("[GET /posts] ERROR:", err);
