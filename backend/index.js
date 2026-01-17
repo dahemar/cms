@@ -1606,11 +1606,10 @@ app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => 
     if (!search && !tagId && !type) {
       setCache(cacheKey, result);
       console.log("[GET /posts] Cache set:", cacheKey);
-      
-      // Set Cache-Control for CDN/edge caching (public endpoints only)
-      res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
     }
     
+    // Set Cache-Control for CDN/edge caching on all successful responses (public endpoint)
+    res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
     res.json(result);
   } catch (err) {
     console.error("[GET /posts] ERROR:", err);
