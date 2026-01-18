@@ -260,3 +260,18 @@ model Session {
 
   @@index([expiresAt])
 }
+
+// GitHub App Installation data
+model GitHubInstallation {
+  id              Int      @id @default(autoincrement())
+  installationId  BigInt   @unique // GitHub installation ID
+  accountLogin    String   // GitHub account/org login
+  accountType     String   // "User" or "Organization"
+  repos           Json     // Array of repo full names ["owner/repo1", "owner/repo2"]
+  installedAt     DateTime // When the app was installed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([installationId])
+  @@index([accountLogin])
+}

@@ -80,6 +80,14 @@
       "dest": "backend/index.js"
     },
     {
+      "src": "/github/webhook",
+      "dest": "backend/index.js"
+    },
+    {
+      "src": "/github/(.*)",
+      "dest": "backend/index.js"
+    },
+    {
       "src": "/admin.html",
       "dest": "/admin/admin.html",
       "headers": {

@@ -13,6 +13,7 @@ const { PrismaClient } = require("@prisma/client");
 const { AsyncLocalStorage } = require('async_hooks');
 const { exec } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const { sendVerificationEmail, sendPasswordResetEmail } = require("./emailService");
 const { getProfileByName, listProfiles, syncProfilesToDb } = require("./profiles/registry");
 
@@ -117,7 +118,21 @@ function triggerPrerender(reason, meta = {}) {
 
   const run = () => {
     const startedAt = Date.now();
-    exec(`node "${PRERENDER_SCRIPT_PATH}"`, { cwd: path.resolve(__dirname, "..") }, (err, stdout, stderr) => {
+    // Determine additional output dirs to pass to the prerender script.
+    const candidateDirs = [
+      path.resolve(path.resolve(__dirname, '..'), '..', 'cineclub'),
+      path.resolve(path.resolve(__dirname, '..'), '..', 'sympaathy-v2')
+    ];
+    const existing = candidateDirs.filter(d => require('fs').existsSync(d));
+
+    // Merge with any existing PRERENDER_OUTPUT_DIRS env value
+    const envExtra = process.env.PRERENDER_OUTPUT_DIRS ? process.env.PRERENDER_OUTPUT_DIRS.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const allExtras = Array.from(new Set([...envExtra, ...existing.map(d => d)]));
+
+    const execEnv = Object.assign({}, process.env, {});
+    if (allExtras.length > 0) execEnv.PRERENDER_OUTPUT_DIRS = allExtras.join(',');
+
+    exec(`node "${PRERENDER_SCRIPT_PATH}"`, { cwd: path.resolve(__dirname, ".."), env: execEnv }, (err, stdout, stderr) => {
       const duration = Date.now() - startedAt;
       if (err) {
         console.error("[Prerender] Error:", { reason, durationMs: duration, error: err.message });
@@ -133,6 +148,118 @@ function triggerPrerender(reason, meta = {}) {
   if (prerenderTimer) clearTimeout(prerenderTimer);
   prerenderTimer = setTimeout(run, Number.isFinite(PRERENDER_DEBOUNCE_MS) ? PRERENDER_DEBOUNCE_MS : 500);
 }
+
+// ============================================================
+// GitHub Actions: Trigger frontend rebuild
+// ============================================================
+// Importar módulo de GitHub App (opcional, fallback a PAT si no está configurado)
+let githubApp;
+try {
+  githubApp = require('./github-app');
+} catch (err) {
+  console.warn('[GitHub] github-app.js not found, using PAT fallback only');
+}
+
+/**
+ * Dispara workflows de GitHub Actions en los repositorios del frontend.
+ * 
+ * Método 1 (recomendado): GitHub App con tokens efímeros
+ *   - Requiere: GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID, GITHUB_FRONTEND_REPOS
+ *   - Ventaja: Tokens rotan automáticamente cada ~1 hora, escalable a múltiples repos
+ * 
+ * Método 2 (fallback): PAT (Personal Access Token)
+ *   - Requiere: GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME
+ *   - Ventaja: Setup más simple, ideal para 1-2 repos
+ * 
+ * @param {string} reason - Razón del rebuild (para logging)
+ * @param {object} meta - Metadata adicional (opcional)
+ * @returns {Promise<void>}
+ */
+async function triggerFrontendRebuild(reason, meta = {}) {
+  // Intentar usar GitHub App primero
+  if (githubApp) {
+    const config = githubApp.checkConfiguration();
+    if (config.ok) {
+      try {
+        const result = await githubApp.triggerWorkflowForRepos(reason, meta);
+        if (result.success.length > 0) {
+          console.log(`[GitHub Rebuild] ✅ Triggered ${result.success.length} repo(s) via GitHub App`);
+        }
+        if (result.failed.length > 0) {
+          console.error(`[GitHub Rebuild] ❌ Failed ${result.failed.length} repo(s):`, result.failed);
+        }
+        return; // GitHub App funcionó, no usar fallback
+      } catch (err) {
+        console.error('[GitHub Rebuild] GitHub App failed, falling back to PAT:', err.message);
+      }
+    } else {
+      console.log('[GitHub Rebuild] GitHub App not configured, using PAT fallback');
+    }
+  }
+
+  // Fallback a PAT (método antiguo)
+  const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+  const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER;
+  const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME;
+
+  if (!GITHUB_TOKEN || !GITHUB_REPO_OWNER || !GITHUB_REPO_NAME) {
+    console.warn('[GitHub Rebuild] Skipped: no GitHub App and no PAT configured');
+    return;
+  }
+
+  const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/dispatches`;
+  const payload = {
+    event_type: 'cms-content-updated',
+    client_payload: {
+      reason,
+      timestamp: new Date().toISOString(),
+      ...meta
+    }
+  };
+
+  try {
+    const startedAt = Date.now();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'User-Agent': 'CMS-Backend-Rebuild-Trigger'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const duration = Date.now() - startedAt;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[GitHub Rebuild] Failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText,
+        reason,
+        durationMs: duration
+      });
+      return;
+    }
+
+    console.log('[GitHub Rebuild] ✅ Triggered successfully (PAT):', {
+      reason,
+      repo: `${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`,
+      durationMs: duration,
+      ...meta
+    });
+  } catch (err) {
+    console.error('[GitHub Rebuild] Error:', {
+      reason,
+      error: err.message,
+      ...meta
+    });
+  }
+}
+
 const allowedOrigins = (() => {
   if (process.env.CORS_ORIGIN) return [process.env.CORS_ORIGIN.trim()];
   if (process.env.ALLOWED_ORIGINS)
@@ -190,8 +317,144 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 // Aumentar límite del body parser para permitir imágenes base64 grandes
-app.use(express.json({ limit: '50mb' })); // Para parsear JSON en POST/PUT
+app.use(express.json({ limit: '50mb', verify: (req, res, buf, encoding) => { req.rawBody = buf; } })); // Para parsear JSON en POST/PUT
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// --- GitHub webhook endpoint (verifica X-Hub-Signature-256) ---
+// Endpoint público: /github/webhook
+// Recibe eventos: installation, installation_repositories
+app.post('/github/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    const sig = req.headers['x-hub-signature-256'];
+
+    if (!secret) {
+      console.warn('[Webhook] GITHUB_WEBHOOK_SECRET not configured');
+      return res.status(500).send('webhook secret not configured');
+    }
+
+    if (!sig) {
+      console.warn('[Webhook] Missing X-Hub-Signature-256');
+      return res.status(400).send('missing signature');
+    }
+
+    // Calcular HMAC sha256 using the raw request body (set by the JSON verifier)
+    const raw = req.rawBody || req.body;
+    const hmac = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    if (`sha256=${hmac}` !== sig) {
+      console.warn('[Webhook] Invalid signature');
+      return res.status(401).send('invalid signature');
+    }
+
+    const event = req.headers['x-github-event'];
+    const payload = raw && raw.toString ? JSON.parse(raw.toString()) : req.body;
+
+    console.log(`[Webhook] Received event=${event} action=${payload.action || ''}`);
+
+    // Persist installation info in Prisma DB
+    if (event === 'installation') {
+      const installation = payload.installation;
+      if (installation && installation.id) {
+        try {
+          // Upsert: create or update
+          await prisma.gitHubInstallation.upsert({
+            where: { installationId: BigInt(installation.id) },
+            update: {
+              accountLogin: installation.account?.login || 'unknown',
+              accountType: installation.account?.type || 'User',
+              installedAt: new Date()
+            },
+            create: {
+              installationId: BigInt(installation.id),
+              accountLogin: installation.account?.login || 'unknown',
+              accountType: installation.account?.type || 'User',
+              repos: [],
+              installedAt: new Date()
+            }
+          });
+          console.log('[Webhook] Saved installation to DB:', installation.id);
+        } catch (e) {
+          console.error('[Webhook] Failed to save installation:', e.message);
+        }
+      }
+    }
+
+    if (event === 'installation_repositories') {
+      const installation = payload.installation;
+      const reposAdded = (payload.repositories_added || []).map(r => r.full_name);
+      const reposRemoved = (payload.repositories_removed || []).map(r => r.full_name);
+
+      try {
+        const existing = await prisma.gitHubInstallation.findUnique({
+          where: { installationId: BigInt(installation.id) }
+        });
+
+        if (existing) {
+          let repos = Array.isArray(existing.repos) ? existing.repos : [];
+          
+          // Add new repos
+          for (const r of reposAdded) {
+            if (!repos.includes(r)) repos.push(r);
+          }
+          
+          // Remove repos
+          repos = repos.filter(r => !reposRemoved.includes(r));
+
+          await prisma.gitHubInstallation.update({
+            where: { installationId: BigInt(installation.id) },
+            data: { repos }
+          });
+          
+          console.log('[Webhook] Updated repos in DB:', repos.length, 'repos');
+        }
+      } catch (e) {
+        console.error('[Webhook] Failed to update repos:', e.message);
+      }
+    }
+
+    // Acknowledge quickly
+    res.status(200).send('ok');
+  } catch (err) {
+    console.error('[Webhook] handler error:', err?.message || err);
+    return res.status(500).send('internal error');
+  }
+});
+
+// --- GitHub installation inspection endpoint (admin/debug) ---
+// GET /github/installation - Read stored installation info
+app.get('/github/installation', async (req, res) => {
+  try {
+    const installation = await prisma.gitHubInstallation.findFirst({
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!installation) {
+      return res.status(404).json({ error: 'No installation data found' });
+    }
+
+    const data = {
+      installation_id: installation.installationId.toString(),
+      account: {
+        login: installation.accountLogin,
+        type: installation.accountType
+      },
+      repos: installation.repos,
+      installed_at: installation.installedAt.toISOString()
+    };
+    
+    // Return only safe fields (no sensitive raw payload)
+    res.json({
+      installation_id: data.installation_id,
+      account: data.account,
+      installed_at: data.installed_at,
+      repos: data.repos || [],
+      env_installation_id: process.env.GITHUB_APP_INSTALLATION_ID || null
+    });
+  } catch (err) {
+    console.error('[Installation] Read error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to read installation data' });
+  }
+});
 
 // Instrumentation middleware: correlate async work with the current request
 app.use((req, res, next) => {
@@ -2036,6 +2299,13 @@ app.post("/posts", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (
       contentLength: post.content.length,
       published: post.published
     });
+
+    // Disparar rebuild del frontend si el post fue publicado
+    if (post.published) {
+      triggerFrontendRebuild('post-created', { postId: post.id, postTitle: post.title }).catch(err => {
+        console.error('[POST /posts] triggerFrontendRebuild error:', err?.message || err);
+      });
+    }
     
     // Si la sección es de tipo "thumbnails" y se proporciona thumbnailData, crear el thumbnail
     let thumbnail = null;
@@ -2382,6 +2652,15 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
       }
     }
     
+    // Disparar rebuild del frontend si el post está publicado (o cambió a publicado)
+    const wasPublished = existing.published;
+    const isNowPublished = post.published;
+    if (isNowPublished || (wasPublished && !isNowPublished)) {
+      triggerFrontendRebuild('post-updated', { postId: post.id, postTitle: post.title, wasPublished, isNowPublished }).catch(err => {
+        console.error('[PUT /posts/:id] triggerFrontendRebuild error:', err?.message || err);
+      });
+    }
+
     // Invalidar cache de posts para este sitio
     console.log(`[PUT /posts/:id] Invalidating cache for siteId: ${siteId}`);
     invalidateCache(`posts:*siteId:${siteId}*`);

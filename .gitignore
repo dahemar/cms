@@ -49,6 +49,10 @@ backend/prisma/migrations/*.sql
 *.temp
 .cache/
 
+# GitHub App private key and installation persistence
+backend/cms-app-dhm.2026-01-18.private-key.pem
+backend/github_installation.json
+
 # Vercel
 .vercel
 
