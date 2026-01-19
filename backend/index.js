@@ -4450,34 +4450,51 @@ async function withRetry(fn, attempts = 2, delayMs = 200) {
 
 app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
   try {
+    const userId = req.session.userId;
+    const cacheKey = getCacheKey('sites', { userId });
+    
+    // Try cache first (sites rarely change)
+    const cached = getCached(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
     const user = await withRetry(() => prisma.user.findUnique({
-      where: { id: req.session.userId },
+      where: { id: userId },
       select: { isAdmin: true },
     }), 2, 200);
 
     let sites;
     if (user && user.isAdmin) {
-      // Si es admin, devolver todos los sitios
+      // Si es admin, devolver todos los sitios (sin config/counts para velocidad)
       sites = await withRetry(() => prisma.site.findMany({
-        include: {
-          config: true,
-          _count: {
-            select: { posts: true, sections: true },
-          },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          domain: true,
+          description: true,
+          githubRepo: true,
+          createdAt: true,
+          updatedAt: true,
         },
         orderBy: { createdAt: "asc" },
       }), 2, 200);
     } else {
       // Si no es admin, solo sus sitios
       const userSites = await withRetry(() => prisma.userSite.findMany({
-        where: { userId: req.session.userId },
+        where: { userId },
         include: {
           site: {
-            include: {
-              config: true,
-              _count: {
-                select: { posts: true, sections: true },
-              },
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              domain: true,
+              description: true,
+              githubRepo: true,
+              createdAt: true,
+              updatedAt: true,
             },
           },
         },
@@ -4485,6 +4502,8 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
       sites = userSites.map(us => us.site);
     }
 
+    // Cache for 5 minutes (sites don't change often)
+    setCache(cacheKey, sites);
     res.json(sites);
   } catch (err) {
     // Si la DB falla de forma transitoria, devolver empty list para no romper el admin UI
@@ -4603,6 +4622,9 @@ app.put("/sites/:id/config", requireAuth, async (req, res) => {
       },
     });
 
+    // Invalidate sites cache (config changed)
+    invalidateCache('sites:*');
+    
     res.json(config);
   } catch (err) {
     console.error(err);
