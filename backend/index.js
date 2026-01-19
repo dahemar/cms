@@ -183,7 +183,7 @@ async function triggerFrontendRebuild(reason, siteId, meta = {}) {
   try {
     site = await prisma.site.findUnique({
       where: { id: siteId },
-      select: { id: true, name: true, slug: true, githubRepo: true }
+      select: { id: true, name: true, slug: true, githubRepo: true, vercelHookUrl: true }
     });
   } catch (err) {
     console.error('[triggerFrontendRebuild] Error fetching site:', err.message);
@@ -223,6 +223,24 @@ async function triggerFrontendRebuild(reason, siteId, meta = {}) {
       }
     } else {
       console.log('[GitHub Rebuild] GitHub App not configured, using PAT fallback');
+    }
+  }
+
+  // If site has a Vercel Deploy Hook configured, prefer calling it (faster, no Actions required)
+  if (site.vercelHookUrl) {
+    try {
+      console.log('[triggerFrontendRebuild] Using Vercel hook for site:', siteId);
+      const started = Date.now();
+      await withRetry(() => fetch(site.vercelHookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason, siteId, siteName: site.name, timestamp: new Date().toISOString(), meta })
+      }), 3, 250);
+      console.log('[Vercel Hook] ✅ POSTed to vercel hook', { siteId, durationMs: Date.now() - started });
+      return;
+    } catch (e) {
+      console.error('[Vercel Hook] Error calling vercel hook, falling back to GitHub dispatch:', e?.message || e);
+      // continue to fallback flows
     }
   }
 
@@ -4452,6 +4470,41 @@ async function withRetry(fn, attempts = 2, delayMs = 200) {
   }
   throw lastErr;
 }
+
+// Health check endpoint: public, lightweight diagnostics
+app.get("/health", async (req, res) => {
+  try {
+    const info = {
+      ok: true,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+    };
+
+    // Redis check (if configured)
+    if (redisClient) {
+      try {
+        const pong = await redisClient.ping();
+        info.redis = { ok: true, pong };
+      } catch (e) {
+        info.redis = { ok: false, error: e?.message || String(e) };
+      }
+    } else {
+      info.redis = { ok: false, reason: 'no-redis-configured' };
+    }
+
+    // DB check (lightweight)
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      info.db = { ok: true };
+    } catch (e) {
+      info.db = { ok: false, error: e?.message || String(e) };
+    }
+
+    return res.json(info);
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
 
 app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
   try {
