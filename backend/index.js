@@ -558,6 +558,19 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Serve single-file legacy asset for admin (avoid 404 when admin is proxied through backend)
+app.get('/soundcloud-icon.png', (req, res) => {
+  try {
+    const assetPath = path.resolve(__dirname, '..', 'admin', 'soundcloud-icon.png');
+    if (fs.existsSync(assetPath)) {
+      return res.sendFile(assetPath);
+    }
+  } catch (e) {
+    // ignore and fallthrough to 404
+  }
+  res.status(404).send('Not found');
+});
+
 // Configurar Passport para serializar/deserializar usuarios
 passport.serializeUser((user, done) => {
   done(null, user.id);
@@ -4413,17 +4426,34 @@ app.delete("/sections/:id", adminRateLimiter, requireAuth, async (req, res) => {
 // ==================== SITES ====================
 
 // GET /sites - Obtener todos los sitios a los que el usuario tiene acceso
+// Helper: ejecutar una función con retry/backoff (para mitigar timeouts transitorios de Prisma)
+async function withRetry(fn, attempts = 2, delayMs = 200) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      // Si es el último intento, propagar
+      if (i === attempts - 1) break;
+      // Esperar un poco antes del siguiente intento
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
+    const user = await withRetry(() => prisma.user.findUnique({
       where: { id: req.session.userId },
       select: { isAdmin: true },
-    });
+    }), 2, 200);
 
     let sites;
     if (user && user.isAdmin) {
       // Si es admin, devolver todos los sitios
-      sites = await prisma.site.findMany({
+      sites = await withRetry(() => prisma.site.findMany({
         include: {
           config: true,
           _count: {
@@ -4431,10 +4461,10 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
           },
         },
         orderBy: { createdAt: "asc" },
-      });
+      }), 2, 200);
     } else {
       // Si no es admin, solo sus sitios
-      const userSites = await prisma.userSite.findMany({
+      const userSites = await withRetry(() => prisma.userSite.findMany({
         where: { userId: req.session.userId },
         include: {
           site: {
@@ -4446,14 +4476,19 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
             },
           },
         },
-      });
+      }), 2, 200);
       sites = userSites.map(us => us.site);
     }
 
     res.json(sites);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch sites" });
+    // Si la DB falla de forma transitoria, devolver empty list para no romper el admin UI
+    console.error('[GET /sites] Error fetching sites (after retries):', err?.message || err);
+    // Añadir cabeceras para ayudar a diagnóstico desde el cliente
+    res.set('X-CMS-Error', 'true');
+    res.set('X-CMS-Error-Message', String(err?.message || '').slice(0, 200));
+    // Responder con lista vacía para evitar que el panel de admin deje de cargar
+    return res.json([]);
   }
 });
 
