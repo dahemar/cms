@@ -694,18 +694,23 @@ function setCache(key, data) {
   }
 }
 
-function getCached(key) {
+async function getCached(key) {
   if (CACHE_TTL <= 0) return null;
-  // Prefer Redis in production if available (synchronous fallback to memory)
+  
+  // Try Redis first if available (shared cache across instances)
   if (redisClient) {
     try {
-      // Note: route handlers that use Redis call redisClient.get directly (async) where needed.
-      // Here keep memory fallback for simple sync callers.
+      const redisValue = await redisClient.get(key);
+      if (redisValue) {
+        return JSON.parse(redisValue);
+      }
     } catch (err) {
-      // ignore
+      console.warn('[Redis] get error', err?.message || err);
+      // Fallback to memory on Redis error
     }
   }
 
+  // Fallback to memory cache
   const cached = contentCache.get(key);
   if (!cached) return null;
   if (Date.now() - cached.timestamp > CACHE_TTL) {
@@ -3921,7 +3926,7 @@ app.get("/sections", publicRateLimiter, resolveSiteFromDomain, async (req, res) 
         console.warn('[Redis] get error', e?.message || e);
       }
     } else {
-      const cached = getCached(cacheKey);
+      const cached = await getCached(cacheKey);
       if (cached) {
         console.log("[GET /sections] Cache hit:", cacheKey);
         return res.json(cached);
@@ -4454,7 +4459,7 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
     const cacheKey = getCacheKey('sites', { userId });
     
     // Try cache first (sites rarely change)
-    const cached = getCached(cacheKey);
+    const cached = await getCached(cacheKey);
     if (cached) {
       return res.json(cached);
     }
