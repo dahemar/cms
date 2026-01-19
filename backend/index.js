@@ -2758,7 +2758,16 @@ app.delete("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, a
     invalidateCache(`posts:*siteId:${siteId}*`);
     // También invalidar cache general para evitar lecturas stale
     invalidateCache(`posts:*`);
+    // Ejecutar prerender local si está configurado
     triggerPrerender("post_deleted", { postId: postInfo.id, siteId });
+    // Además, disparar el rebuild remoto (GitHub Actions) para que los frontends se actualicen
+    try {
+      triggerFrontendRebuild('post-deleted', { postId: postInfo.id, siteId }).catch(err => {
+        console.error('[DELETE /posts] triggerFrontendRebuild error:', err?.message || err);
+      });
+    } catch (err) {
+      console.error('[DELETE /posts] triggerFrontendRebuild threw:', err?.message || err);
+    }
     
     // Registrar en auditoría
     await logAuditEvent(req, "post_deleted", "post", postInfo.id, {
