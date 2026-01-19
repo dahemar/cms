@@ -72,7 +72,7 @@ O desde GitHub UI:
 gh run list --repo dahemar/cineclub --limit 3
 
 # Ver Vercel deployment (esperar ~1-2 min)
-curl -I https://cineclub.vercel.app/posts_bootstrap.json
+curl -I https://cineclub-theta.vercel.app/posts_bootstrap.json
 curl -I https://sympaathy-v2.vercel.app/posts_bootstrap.json
 ```
 

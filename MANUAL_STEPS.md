@@ -130,7 +130,7 @@ gh workflow run prerender-deploy.yml --repo dahemar/cineclub
 
 ```bash
 # Esperar 2-3 minutos después del workflow completion
-curl -I https://cineclub.vercel.app/posts_bootstrap.json
+curl -I https://cineclub-theta.vercel.app/posts_bootstrap.json
 curl -I https://sympaathy-v2.vercel.app/posts_bootstrap.json
 ```
 

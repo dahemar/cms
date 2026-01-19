@@ -183,7 +183,7 @@ cd /Users/david/Documents/GitHub/cms
    ```
 4. Verificar Vercel deployment:
    ```bash
-   curl -I https://cineclub.vercel.app/posts_bootstrap.json
+   curl -I https://cineclub-theta.vercel.app/posts_bootstrap.json
    curl -I https://sympaathy-v2.vercel.app/posts_bootstrap.json
    ```
 
