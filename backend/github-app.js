@@ -309,7 +309,6 @@ async function triggerWorkflowForRepos(reason, meta = {}) {
 function checkConfiguration() {
   const required = [
     'GITHUB_APP_ID',
-    'GITHUB_APP_INSTALLATION_ID',
     'GITHUB_FRONTEND_REPOS'
   ];
 
@@ -329,6 +328,8 @@ function checkConfiguration() {
   if (!privateKeyConfigured) {
     missing.push('GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH');
   }
+
+  // Note: GITHUB_APP_INSTALLATION_ID is optional - getInstallationToken() will try DB/JSON fallback
 
   return {
     ok: missing.length === 0,
