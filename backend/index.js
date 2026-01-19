@@ -1252,20 +1252,25 @@ function getUserId(req) {
 
 // Middleware de autenticación - soporta sesión y JWT
 async function requireAuth(req, res, next) {
-  const userId = getUserId(req);
-  
-  if (userId) {
-    // Asegurar que req.session.userId esté establecido para compatibilidad
-    if (!req.session) {
-      req.session = {};
+  try {
+    const userId = getUserId(req);
+    
+    if (userId) {
+      // Asegurar que req.session.userId esté establecido para compatibilidad
+      if (!req.session) {
+        req.session = {};
+      }
+      req.session.userId = userId;
+      req.userId = userId;
+      return next();
     }
-    req.session.userId = userId;
-    req.userId = userId;
-    return next();
-  }
 
-  console.log("[requireAuth] ❌ No userId found, returning 401");
-  return res.status(401).json({ error: "Unauthorized. Please login." });
+    console.log("[requireAuth] ❌ No userId found, returning 401");
+    return res.status(401).json({ error: "Unauthorized. Please login." });
+  } catch (err) {
+    console.error("[requireAuth] Error:", err?.message || err);
+    return res.status(500).json({ error: "Authentication failed" });
+  }
 }
 
 // Middleware de autenticación por sitio
@@ -4920,6 +4925,25 @@ app.get("/sites/:id/frontend-profile", adminRateLimiter, requireAuth, async (req
   }
 });
 
+// ==================== GLOBAL ERROR HANDLER ====================
+// Catch-all error handler para devolver JSON en lugar de HTML genérico
+app.use((err, req, res, next) => {
+  console.error('[Global Error Handler] Unhandled error:', err?.message || err);
+  console.error('[Global Error Handler] Stack:', err?.stack);
+  
+  // Si ya se envió la respuesta, no hacer nada
+  if (res.headersSent) {
+    return next(err);
+  }
+  
+  // Devolver error JSON consistente
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
+// ==================== START SERVER ====================
 const PORT = 3000;
 const USE_HTTPS = process.env.USE_HTTPS === 'true';
 
