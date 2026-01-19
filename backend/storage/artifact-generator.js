@@ -52,7 +52,7 @@ async function fetchPostsForSection(siteId, sectionId) {
       },
       orderBy: [
         { order: 'asc' },
-        { publishedAt: 'desc' }
+        { updatedAt: 'desc' }
       ]
     });
     
@@ -91,12 +91,22 @@ async function buildCompleteBootstrap(siteId) {
   sections.forEach(s => { if (s?.slug) bySlug[s.slug] = s; });
 
   const getSectionId = (slug) => (bySlug[slug] && bySlug[slug].id) ? bySlug[slug].id : null;
-  
-  const landingId = getSectionId('landing');
-  const releasesId = getSectionId('releases');
-  const liveId = getSectionId('live');
-  const bioId = getSectionId('bio');
-  const contactId = getSectionId('contact');
+
+  // Support common alias slugs (Portuguese / English) for sites like Cineclub
+  const findSectionId = (names) => {
+    if (!Array.isArray(names)) names = [names];
+    for (const n of names) {
+      const id = getSectionId(n);
+      if (id) return id;
+    }
+    return null;
+  };
+
+  const landingId = findSectionId(['landing', 'inicio', 'home']);
+  const releasesId = findSectionId(['releases', 'lancamentos', 'releases']);
+  const liveId = findSectionId(['live', 'sessions', 'sessoes']);
+  const bioId = findSectionId(['bio', 'sobre', 'quem-somos']);
+  const contactId = findSectionId(['contact', 'contato']);
 
   console.log(`[Artifacts] Section IDs: landing=${landingId}, releases=${releasesId}, live=${liveId}, bio=${bioId}, contact=${contactId}`);
 
@@ -159,12 +169,29 @@ async function buildCompleteBootstrap(siteId) {
       }
       return null;
     })() : null;
+
+    // Extract text content for description
+    const textBlocks = Array.isArray(p.blocks) ? p.blocks.filter(b => b?.type === 'text') : [];
+    const description = textBlocks.map(b => b?.content || '').filter(Boolean).join('\n') || p.content || '';
+
+    // Extract all image blocks (not slideshows)
+    const imageBlocks = Array.isArray(p.blocks) ? p.blocks.filter(b => b?.type === 'image') : [];
+    const images = imageBlocks.map(b => resolveMediaUrl(b?.content || '')).filter(Boolean);
     
     acc[p.slug] = {
       title: p.title || p.slug,
       video,
       primaryImages,
-      secondaryImages
+      secondaryImages,
+      // New fields for frontend rendering:
+      description,
+      images,
+      blocks: p.blocks || [],
+      content: p.content || '',
+      metadata: p.metadata || {},
+      order: p.order ?? 0,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt
     };
     return acc;
   }, {});
