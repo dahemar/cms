@@ -4489,9 +4489,6 @@ app.get("/sites", adminRateLimiter, requireAuth, async (req, res) => {
   } catch (err) {
     // Si la DB falla de forma transitoria, devolver empty list para no romper el admin UI
     console.error('[GET /sites] Error fetching sites (after retries):', err?.message || err);
-    // Añadir cabeceras para ayudar a diagnóstico desde el cliente
-    res.set('X-CMS-Error', 'true');
-    res.set('X-CMS-Error-Message', String(err?.message || '').slice(0, 200));
     // Responder con lista vacía para evitar que el panel de admin deje de cargar
     return res.json([]);
   }
