@@ -2348,7 +2348,7 @@ app.post("/posts", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (
 
     // Invalidar cache de posts para este sitio
     invalidateCache(`posts:*siteId:${siteId}*`);
-    triggerPrerender("post_created", { postId: post.id, siteId });
+    await publishToStorage("post_created", siteId, { postId: post.id });
     
     // Registrar en auditoría
     await logAuditEvent(req, "post_created", "post", post.id, {
@@ -2645,7 +2645,7 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     // También invalidar cache más general para asegurar que se actualice
     invalidateCache(`posts:*`);
     console.log(`[PUT /posts/:id] Cache invalidated`);
-    triggerPrerender("post_updated", { postId: post.id, siteId });
+    await publishToStorage("post_updated", siteId, { postId: post.id });
     
     // Registrar en auditoría
     await logAuditEvent(req, "post_updated", "post", post.id, {
@@ -2718,16 +2718,8 @@ app.delete("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, a
     invalidateCache(`posts:*siteId:${siteId}*`);
     // También invalidar cache general para evitar lecturas stale
     invalidateCache(`posts:*`);
-    // Ejecutar prerender local si está configurado
-    triggerPrerender("post_deleted", { postId: postInfo.id, siteId });
     // Publish updated content to Supabase Storage
-    try {
-      publishToStorage('post-deleted', siteId, { postId: postInfo.id }).catch(err => {
-        console.error('[DELETE /posts] publishToStorage error:', err?.message || err);
-      });
-    } catch (err) {
-      console.error('[DELETE /posts] publishToStorage threw:', err?.message || err);
-    }
+    await publishToStorage("post_deleted", siteId, { postId: postInfo.id });
     
     // Registrar en auditoría
     await logAuditEvent(req, "post_deleted", "post", postInfo.id, {
