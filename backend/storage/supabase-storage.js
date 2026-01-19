@@ -248,11 +248,8 @@ async function publishArtifacts(siteId, artifacts, metadata = {}) {
     await writeManifest(siteId);
 
     // Step 5: Store current version in Redis for fast lookups
-    await redisClient.set(
-      `publish:version:${siteId}`,
-      version,
-      { EX: 86400 * 7 } // 7 days TTL
-    );
+    // Use explicit argument form supported by this redis client
+    await redisClient.set(`publish:version:${siteId}`, version, 'EX', 86400 * 7);
 
     // Step 6: Release lock
     await releasePublishLock(siteId);
