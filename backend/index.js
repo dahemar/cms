@@ -161,67 +161,86 @@ try {
 }
 
 /**
- * Dispara workflows de GitHub Actions en los repositorios del frontend.
+ * Dispara workflow de GitHub Actions solo en el repositorio asociado al sitio modificado.
  * 
- * Método 1 (recomendado): GitHub App con tokens efímeros
- *   - Requiere: GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID, GITHUB_FRONTEND_REPOS
- *   - Ventaja: Tokens rotan automáticamente cada ~1 hora, escalable a múltiples repos
- * 
- * Método 2 (fallback): PAT (Personal Access Token)
- *   - Requiere: GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME
- *   - Ventaja: Setup más simple, ideal para 1-2 repos
+ * Principio de diseño: Un evento editorial no debe provocar efectos colaterales en sitios no relacionados.
  * 
  * @param {string} reason - Razón del rebuild (para logging)
+ * @param {number} siteId - ID del sitio modificado (OBLIGATORIO)
  * @param {object} meta - Metadata adicional (opcional)
  * @returns {Promise<void>}
  */
-async function triggerFrontendRebuild(reason, meta = {}) {
-  console.log('[triggerFrontendRebuild] CALLED with reason:', reason, 'meta:', meta);
+async function triggerFrontendRebuild(reason, siteId, meta = {}) {
+  console.log('[triggerFrontendRebuild] CALLED with reason:', reason, 'siteId:', siteId, 'meta:', meta);
   
+  if (!siteId) {
+    console.error('[triggerFrontendRebuild] ERROR: siteId is required');
+    return;
+  }
+
+  // Obtener el sitio y su repo asociado
+  let site;
+  try {
+    site = await prisma.site.findUnique({
+      where: { id: siteId },
+      select: { id: true, name: true, slug: true, githubRepo: true }
+    });
+  } catch (err) {
+    console.error('[triggerFrontendRebuild] Error fetching site:', err.message);
+    return;
+  }
+
+  if (!site) {
+    console.error('[triggerFrontendRebuild] Site not found:', siteId);
+    return;
+  }
+
+  if (!site.githubRepo) {
+    console.warn(`[triggerFrontendRebuild] Site "${site.name}" (id=${siteId}) has no githubRepo configured. Skipping trigger.`);
+    return;
+  }
+
+  console.log(`[triggerFrontendRebuild] Site "${site.name}" → Repo: ${site.githubRepo}`);
+
+  const [owner, repo] = site.githubRepo.split('/');
+  if (!owner || !repo) {
+    console.error(`[triggerFrontendRebuild] Invalid githubRepo format: "${site.githubRepo}". Expected: "owner/repo"`);
+    return;
+  }
+
   // Intentar usar GitHub App primero
   if (githubApp) {
-    console.log('[triggerFrontendRebuild] githubApp exists, checking config...');
     const config = githubApp.checkConfiguration();
-    console.log('[triggerFrontendRebuild] Config check result:', config);
     
     if (config.ok) {
       try {
-        console.log('[triggerFrontendRebuild] Calling githubApp.triggerWorkflowForRepos...');
-        const result = await githubApp.triggerWorkflowForRepos(reason, meta);
-        console.log('[triggerFrontendRebuild] Result:', result);
-        
-        if (result.success.length > 0) {
-          console.log(`[GitHub Rebuild] ✅ Triggered ${result.success.length} repo(s) via GitHub App`);
-        }
-        if (result.failed.length > 0) {
-          console.error(`[GitHub Rebuild] ❌ Failed ${result.failed.length} repo(s):`, result.failed);
-        }
-        return; // GitHub App funcionó, no usar fallback
+        console.log(`[triggerFrontendRebuild] Triggering workflow via GitHub App for ${site.githubRepo}...`);
+        await githubApp.triggerWorkflowForRepo(owner, repo, reason, { ...meta, siteId, siteName: site.name });
+        console.log(`[GitHub Rebuild] ✅ Triggered ${site.githubRepo} via GitHub App`);
+        return;
       } catch (err) {
-        console.error('[GitHub Rebuild] GitHub App failed, falling back to PAT:', err.message, err);
+        console.error('[GitHub Rebuild] GitHub App failed, falling back to PAT:', err.message);
       }
     } else {
       console.log('[GitHub Rebuild] GitHub App not configured, using PAT fallback');
     }
-  } else {
-    console.log('[triggerFrontendRebuild] No githubApp available');
   }
 
   // Fallback a PAT (método antiguo)
   const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-  const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER;
-  const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME;
 
-  if (!GITHUB_TOKEN || !GITHUB_REPO_OWNER || !GITHUB_REPO_NAME) {
+  if (!GITHUB_TOKEN) {
     console.warn('[GitHub Rebuild] Skipped: no GitHub App and no PAT configured');
     return;
   }
 
-  const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/dispatches`;
+  const url = `https://api.github.com/repos/${owner}/${repo}/dispatches`;
   const payload = {
     event_type: 'cms-content-updated',
     client_payload: {
       reason,
+      siteId,
+      siteName: site.name,
       timestamp: new Date().toISOString(),
       ...meta
     }
@@ -250,6 +269,7 @@ async function triggerFrontendRebuild(reason, meta = {}) {
         statusText: response.statusText,
         error: errorText,
         reason,
+        repo: `${owner}/${repo}`,
         durationMs: duration
       });
       return;
@@ -257,13 +277,16 @@ async function triggerFrontendRebuild(reason, meta = {}) {
 
     console.log('[GitHub Rebuild] ✅ Triggered successfully (PAT):', {
       reason,
-      repo: `${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`,
+      repo: `${owner}/${repo}`,
+      siteId,
+      siteName: site.name,
       durationMs: duration,
       ...meta
     });
   } catch (err) {
     console.error('[GitHub Rebuild] Error:', {
       reason,
+      repo: `${owner}/${repo}`,
       error: err.message,
       ...meta
     });
@@ -2314,7 +2337,7 @@ app.post("/posts", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (
     console.log('[POST /posts] Post publish status:', { published: post.published });
     if (post.published) {
       console.log('[POST /posts] Calling triggerFrontendRebuild...');
-      triggerFrontendRebuild('post-created', { postId: post.id, postTitle: post.title }).catch(err => {
+      triggerFrontendRebuild('post-created', siteId, { postId: post.id, postTitle: post.title }).catch(err => {
         console.error('[POST /posts] triggerFrontendRebuild error:', err?.message || err);
       });
     } else {
@@ -2672,7 +2695,7 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     console.log('[PUT /posts/:id] Post publish status:', { wasPublished, isNowPublished, willTrigger: isNowPublished || (wasPublished && !isNowPublished) });
     if (isNowPublished || (wasPublished && !isNowPublished)) {
       console.log('[PUT /posts/:id] Calling triggerFrontendRebuild...');
-      triggerFrontendRebuild('post-updated', { postId: post.id, postTitle: post.title, wasPublished, isNowPublished }).catch(err => {
+      triggerFrontendRebuild('post-updated', siteId, { postId: post.id, postTitle: post.title, wasPublished, isNowPublished }).catch(err => {
         console.error('[PUT /posts/:id] triggerFrontendRebuild error:', err?.message || err);
       });
     } else {
@@ -2762,7 +2785,7 @@ app.delete("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, a
     triggerPrerender("post_deleted", { postId: postInfo.id, siteId });
     // Además, disparar el rebuild remoto (GitHub Actions) para que los frontends se actualicen
     try {
-      triggerFrontendRebuild('post-deleted', { postId: postInfo.id, siteId }).catch(err => {
+      triggerFrontendRebuild('post-deleted', siteId, { postId: postInfo.id }).catch(err => {
         console.error('[DELETE /posts] triggerFrontendRebuild error:', err?.message || err);
       });
     } catch (err) {

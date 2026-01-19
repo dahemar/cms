@@ -34,6 +34,7 @@ model Site {
   slug              String           @unique
   domain            String?          // Dominio del frontend (opcional)
   description       String?
+  githubRepo        String?          // Repositorio GitHub asociado (ej: "dahemar/cineclub")
   frontendProfileId Int?             // Perfil de frontend asociado (nullable para compatibilidad)
   frontendProfile   FrontendProfile? @relation(fields: [frontendProfileId], references: [id], onDelete: SetNull)
   config            SiteConfig?      // Configuración del sitio
