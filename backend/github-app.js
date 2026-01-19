@@ -224,9 +224,10 @@ async function triggerWorkflowForRepo(owner, repo, reason, meta = {}) {
         statusText: response.statusText,
         error: errorText,
         reason,
-        durationMs: duration
+        durationMs: duration,
+        url: url
       });
-      throw new Error(`Failed to trigger workflow: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to trigger workflow for ${owner}/${repo}: ${response.status} ${errorText.slice(0, 200)}`);
     }
 
     console.log('[GitHub App] ✅ Workflow triggered:', {
