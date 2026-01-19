@@ -176,12 +176,20 @@ try {
  * @returns {Promise<void>}
  */
 async function triggerFrontendRebuild(reason, meta = {}) {
+  console.log('[triggerFrontendRebuild] CALLED with reason:', reason, 'meta:', meta);
+  
   // Intentar usar GitHub App primero
   if (githubApp) {
+    console.log('[triggerFrontendRebuild] githubApp exists, checking config...');
     const config = githubApp.checkConfiguration();
+    console.log('[triggerFrontendRebuild] Config check result:', config);
+    
     if (config.ok) {
       try {
+        console.log('[triggerFrontendRebuild] Calling githubApp.triggerWorkflowForRepos...');
         const result = await githubApp.triggerWorkflowForRepos(reason, meta);
+        console.log('[triggerFrontendRebuild] Result:', result);
+        
         if (result.success.length > 0) {
           console.log(`[GitHub Rebuild] ✅ Triggered ${result.success.length} repo(s) via GitHub App`);
         }
@@ -190,11 +198,13 @@ async function triggerFrontendRebuild(reason, meta = {}) {
         }
         return; // GitHub App funcionó, no usar fallback
       } catch (err) {
-        console.error('[GitHub Rebuild] GitHub App failed, falling back to PAT:', err.message);
+        console.error('[GitHub Rebuild] GitHub App failed, falling back to PAT:', err.message, err);
       }
     } else {
       console.log('[GitHub Rebuild] GitHub App not configured, using PAT fallback');
     }
+  } else {
+    console.log('[triggerFrontendRebuild] No githubApp available');
   }
 
   // Fallback a PAT (método antiguo)
@@ -2301,10 +2311,14 @@ app.post("/posts", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (
     });
 
     // Disparar rebuild del frontend si el post fue publicado
+    console.log('[POST /posts] Post publish status:', { published: post.published });
     if (post.published) {
+      console.log('[POST /posts] Calling triggerFrontendRebuild...');
       triggerFrontendRebuild('post-created', { postId: post.id, postTitle: post.title }).catch(err => {
         console.error('[POST /posts] triggerFrontendRebuild error:', err?.message || err);
       });
+    } else {
+      console.log('[POST /posts] Skipping trigger (post not published)');
     }
     
     // Si la sección es de tipo "thumbnails" y se proporciona thumbnailData, crear el thumbnail
@@ -2655,10 +2669,14 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     // Disparar rebuild del frontend si el post está publicado (o cambió a publicado)
     const wasPublished = existing.published;
     const isNowPublished = post.published;
+    console.log('[PUT /posts/:id] Post publish status:', { wasPublished, isNowPublished, willTrigger: isNowPublished || (wasPublished && !isNowPublished) });
     if (isNowPublished || (wasPublished && !isNowPublished)) {
+      console.log('[PUT /posts/:id] Calling triggerFrontendRebuild...');
       triggerFrontendRebuild('post-updated', { postId: post.id, postTitle: post.title, wasPublished, isNowPublished }).catch(err => {
         console.error('[PUT /posts/:id] triggerFrontendRebuild error:', err?.message || err);
       });
+    } else {
+      console.log('[PUT /posts/:id] Skipping trigger (post not published)');
     }
 
     // Invalidar cache de posts para este sitio
