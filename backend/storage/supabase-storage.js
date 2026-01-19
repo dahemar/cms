@@ -185,9 +185,14 @@ async function writeManifest(siteId) {
     throw new Error(`No Redis state found for site ${siteId}`);
   }
 
+  // Convert files map to an array format expected by frontend workflows
+  const filesArray = Object.keys(state.files || {}).map(k => ({ name: state.files[k], key: k }));
+
   const manifest = {
     version: state.version,
-    files: state.files,
+    // Backwards-compatible: keep a map under `filesMap` and provide `files` as an array
+    filesMap: state.files,
+    files: filesArray,
     updatedAt: state.updatedAt
   };
 
@@ -242,7 +247,14 @@ async function publishArtifacts(siteId, artifacts, metadata = {}) {
     // Step 4: Write manifest.json derived from Redis
     await writeManifest(siteId);
 
-    // Step 5: Release lock
+    // Step 5: Store current version in Redis for fast lookups
+    await redisClient.set(
+      `publish:version:${siteId}`,
+      version,
+      { EX: 86400 * 7 } // 7 days TTL
+    );
+
+    // Step 6: Release lock
     await releasePublishLock(siteId);
 
     const duration = Date.now() - startTime;
