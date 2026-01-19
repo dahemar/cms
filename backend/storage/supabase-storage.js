@@ -217,10 +217,15 @@ async function publishArtifacts(siteId, artifacts, metadata = {}) {
 
   console.log(`[Storage] Publishing artifacts for site ${siteId}, version ${version}`);
 
-  // Step 1: Acquire lock
-  const lockAcquired = await acquirePublishLock(siteId, 60);
+  // Step 1: Acquire lock (10s TTL - enough for publish)
+  const lockAcquired = await acquirePublishLock(siteId, 10);
   if (!lockAcquired) {
-    throw new Error(`Publish already in progress for site ${siteId}`);
+    console.warn(`[Storage] Lock held for site ${siteId}, waiting 2s and retrying once...`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const retryLock = await acquirePublishLock(siteId, 10);
+    if (!retryLock) {
+      throw new Error(`Publish already in progress for site ${siteId} (lock held after retry)`);
+    }
   }
 
   try {
