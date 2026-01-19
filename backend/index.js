@@ -103,211 +103,46 @@ syncProfilesToDb(prisma)
 
 // Configuración de entorno
 const isProduction = process.env.NODE_ENV === "production";
-const PRERENDER_ON_MUTATION = process.env.PRERENDER_ON_MUTATION === "true";
-const PRERENDER_ALLOW_PROD = process.env.PRERENDER_ALLOW_PROD === "true";
-const PRERENDER_DEBOUNCE_MS = parseInt(process.env.PRERENDER_DEBOUNCE_MS || "500", 10);
-const PRERENDER_SCRIPT_PATH = path.resolve(__dirname, "..", "scripts", "prerender_posts.js");
-let prerenderTimer = null;
 
+// DEPRECATED: Local prerender disabled in favor of Supabase Storage publishing
+// const PRERENDER_ON_MUTATION = process.env.PRERENDER_ON_MUTATION === "true";
+// const PRERENDER_ALLOW_PROD = process.env.PRERENDER_ALLOW_PROD === "true";
+// const PRERENDER_DEBOUNCE_MS = parseInt(process.env.PRERENDER_DEBOUNCE_MS || "500", 10);
+// const PRERENDER_SCRIPT_PATH = path.resolve(__dirname, "..", "scripts", "prerender_posts.js");
+// let prerenderTimer = null;
+
+// DEPRECATED: triggerPrerender replaced by publishToStorage (Supabase Storage + Redis)
 function triggerPrerender(reason, meta = {}) {
-  if (!PRERENDER_ON_MUTATION) return;
-  if (isProduction && !PRERENDER_ALLOW_PROD) {
-    console.log("[Prerender] Skipped in production (set PRERENDER_ALLOW_PROD=true to enable)");
-    return;
-  }
-
-  const run = () => {
-    const startedAt = Date.now();
-    // Determine additional output dirs to pass to the prerender script.
-    const candidateDirs = [
-      path.resolve(path.resolve(__dirname, '..'), '..', 'cineclub'),
-      path.resolve(path.resolve(__dirname, '..'), '..', 'sympaathy-v2')
-    ];
-    const existing = candidateDirs.filter(d => require('fs').existsSync(d));
-
-    // Merge with any existing PRERENDER_OUTPUT_DIRS env value
-    const envExtra = process.env.PRERENDER_OUTPUT_DIRS ? process.env.PRERENDER_OUTPUT_DIRS.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const allExtras = Array.from(new Set([...envExtra, ...existing.map(d => d)]));
-
-    const execEnv = Object.assign({}, process.env, {});
-    if (allExtras.length > 0) execEnv.PRERENDER_OUTPUT_DIRS = allExtras.join(',');
-
-    exec(`node "${PRERENDER_SCRIPT_PATH}"`, { cwd: path.resolve(__dirname, ".."), env: execEnv }, (err, stdout, stderr) => {
-      const duration = Date.now() - startedAt;
-      if (err) {
-        console.error("[Prerender] Error:", { reason, durationMs: duration, error: err.message });
-        if (stderr) console.error("[Prerender] stderr:", stderr.trim());
-        return;
-      }
-      console.log("[Prerender] Completed", { reason, durationMs: duration, ...meta });
-      if (stdout) console.log("[Prerender] stdout:", stdout.trim());
-      if (stderr) console.warn("[Prerender] stderr:", stderr.trim());
-    });
-  };
-
-  if (prerenderTimer) clearTimeout(prerenderTimer);
-  prerenderTimer = setTimeout(run, Number.isFinite(PRERENDER_DEBOUNCE_MS) ? PRERENDER_DEBOUNCE_MS : 500);
+  console.log('[Prerender] DEPRECATED: Local prerender disabled. Use publishToStorage instead.');
+  // No-op: prerender is now handled by publishToStorage
 }
 
 // ============================================================
-// GitHub Actions: Trigger frontend rebuild
+// DEPRECATED: GitHub Actions / Vercel Hook Triggers
 // ============================================================
+// Replaced by Supabase Storage publishing (publishToStorage)
+// Keeping code commented for reference during migration
+
 // Importar módulo de GitHub App (opcional, fallback a PAT si no está configurado)
-let githubApp;
-try {
-  githubApp = require('./github-app');
-} catch (err) {
-  console.warn('[GitHub] github-app.js not found, using PAT fallback only');
-}
+// let githubApp;
+// try {
+//   githubApp = require('./github-app');
+// } catch (err) {
+//   console.warn('[GitHub] github-app.js not found, using PAT fallback only');
+// }
 
 /**
- * Dispara workflow de GitHub Actions solo en el repositorio asociado al sitio modificado.
- * 
- * Principio de diseño: Un evento editorial no debe provocar efectos colaterales en sitios no relacionados.
- * 
- * @param {string} reason - Razón del rebuild (para logging)
- * @param {number} siteId - ID del sitio modificado (OBLIGATORIO)
- * @param {object} meta - Metadata adicional (opcional)
- * @returns {Promise<void>}
+ * DEPRECATED: Replaced by publishToStorage
+ * @deprecated Use publishToStorage instead
  */
 async function triggerFrontendRebuild(reason, siteId, meta = {}) {
-  console.log('[triggerFrontendRebuild] CALLED with reason:', reason, 'siteId:', siteId, 'meta:', meta);
+  console.warn('[triggerFrontendRebuild] DEPRECATED: Use publishToStorage instead');
+  console.log('[triggerFrontendRebuild] Forwarding to publishToStorage...');
   
-  if (!siteId) {
-    console.error('[triggerFrontendRebuild] ERROR: siteId is required');
-    return;
-  }
-
-  // Obtener el sitio y su repo asociado
-  let site;
   try {
-    site = await prisma.site.findUnique({
-      where: { id: siteId },
-      select: { id: true, name: true, slug: true, githubRepo: true, vercelHookUrl: true }
-    });
+    await publishToStorage(reason, siteId, meta);
   } catch (err) {
-    console.error('[triggerFrontendRebuild] Error fetching site:', err.message);
-    return;
-  }
-
-  if (!site) {
-    console.error('[triggerFrontendRebuild] Site not found:', siteId);
-    return;
-  }
-
-  if (!site.githubRepo) {
-    console.warn(`[triggerFrontendRebuild] Site "${site.name}" (id=${siteId}) has no githubRepo configured. Skipping trigger.`);
-    return;
-  }
-
-  console.log(`[triggerFrontendRebuild] Site "${site.name}" → Repo: ${site.githubRepo}`);
-
-  const [owner, repo] = site.githubRepo.split('/');
-  if (!owner || !repo) {
-    console.error(`[triggerFrontendRebuild] Invalid githubRepo format: "${site.githubRepo}". Expected: "owner/repo"`);
-    return;
-  }
-
-  // Intentar usar GitHub App primero
-  if (githubApp) {
-    const config = githubApp.checkConfiguration();
-    
-    if (config.ok) {
-      try {
-        console.log(`[triggerFrontendRebuild] Triggering workflow via GitHub App for ${site.githubRepo}...`);
-        await githubApp.triggerWorkflowForRepo(owner, repo, reason, { ...meta, siteId, siteName: site.name });
-        console.log(`[GitHub Rebuild] ✅ Triggered ${site.githubRepo} via GitHub App`);
-        return;
-      } catch (err) {
-        console.error('[GitHub Rebuild] GitHub App failed, falling back to PAT:', err.message);
-      }
-    } else {
-      console.log('[GitHub Rebuild] GitHub App not configured, using PAT fallback');
-    }
-  }
-
-  // If site has a Vercel Deploy Hook configured, prefer calling it (faster, no Actions required)
-  if (site.vercelHookUrl) {
-    try {
-      console.log('[triggerFrontendRebuild] Using Vercel hook for site:', siteId);
-      const started = Date.now();
-      await withRetry(() => fetch(site.vercelHookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason, siteId, siteName: site.name, timestamp: new Date().toISOString(), meta })
-      }), 3, 250);
-      console.log('[Vercel Hook] ✅ POSTed to vercel hook', { siteId, durationMs: Date.now() - started });
-      return;
-    } catch (e) {
-      console.error('[Vercel Hook] Error calling vercel hook, falling back to GitHub dispatch:', e?.message || e);
-      // continue to fallback flows
-    }
-  }
-
-  // Fallback a PAT (método antiguo)
-  const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-
-  if (!GITHUB_TOKEN) {
-    console.warn('[GitHub Rebuild] Skipped: no GitHub App and no PAT configured');
-    return;
-  }
-
-  const url = `https://api.github.com/repos/${owner}/${repo}/dispatches`;
-  const payload = {
-    event_type: 'cms-content-updated',
-    client_payload: {
-      reason,
-      siteId,
-      siteName: site.name,
-      timestamp: new Date().toISOString(),
-      ...meta
-    }
-  };
-
-  try {
-    const startedAt = Date.now();
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${GITHUB_TOKEN}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-        'User-Agent': 'CMS-Backend-Rebuild-Trigger'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const duration = Date.now() - startedAt;
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[GitHub Rebuild] Failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText,
-        reason,
-        repo: `${owner}/${repo}`,
-        durationMs: duration
-      });
-      return;
-    }
-
-    console.log('[GitHub Rebuild] ✅ Triggered successfully (PAT):', {
-      reason,
-      repo: `${owner}/${repo}`,
-      siteId,
-      siteName: site.name,
-      durationMs: duration,
-      ...meta
-    });
-  } catch (err) {
-    console.error('[GitHub Rebuild] Error:', {
-      reason,
-      repo: `${owner}/${repo}`,
-      error: err.message,
-      ...meta
-    });
+    console.error('[triggerFrontendRebuild] Error forwarding to publishToStorage:', err.message);
   }
 }
 
@@ -689,6 +524,67 @@ if (isProduction && process.env.REDIS_URL) {
   } catch (err) {
     console.warn('[Redis] ioredis not installed or failed to init:', err?.message || err);
     redisClient = null;
+  }
+}
+
+// ============================================================
+// Supabase Storage Publishing System
+// ============================================================
+const supabaseStorage = require('./storage/supabase-storage');
+const artifactGenerator = require('./storage/artifact-generator');
+
+// Initialize storage module with Redis client
+supabaseStorage.setRedisClient(redisClient);
+
+/**
+ * Publish content to Supabase Storage (replaces GitHub Actions/Vercel Hook triggers)
+ * 
+ * @param {string} reason - Publish reason (for logging)
+ * @param {number} siteId - Site ID
+ * @param {object} meta - Additional metadata
+ * @returns {Promise<void>}
+ */
+async function publishToStorage(reason, siteId, meta = {}) {
+  console.log('[Publish] Starting publish for site:', siteId, 'reason:', reason);
+  
+  if (!siteId) {
+    console.error('[Publish] ERROR: siteId is required');
+    return;
+  }
+
+  // Check if Supabase Storage is configured
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn('[Publish] Supabase Storage not configured, skipping publish');
+    console.warn('[Publish] Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in environment');
+    return;
+  }
+
+  try {
+    // Generate artifacts
+    const artifacts = await artifactGenerator.generateArtifacts(siteId);
+    
+    // Publish to Supabase Storage (with Redis locks and state management)
+    const result = await supabaseStorage.publishArtifacts(siteId, artifacts, { reason, ...meta });
+    
+    console.log('[Publish] ✅ Published successfully:', {
+      siteId,
+      reason,
+      version: result.version,
+      files: Object.keys(result.files),
+      duration: result.duration
+    });
+    
+    // Invalidate cache to force fresh reads
+    invalidateCache(`posts:*siteId:${siteId}*`);
+    
+  } catch (err) {
+    console.error('[Publish] ❌ Failed:', {
+      siteId,
+      reason,
+      error: err.message,
+      stack: err.stack
+    });
+    throw err;
   }
 }
 
@@ -2374,15 +2270,15 @@ app.post("/posts", adminRateLimiter, resolveSiteFromDomain, requireAuth, async (
       published: post.published
     });
 
-    // Disparar rebuild del frontend si el post fue publicado
+    // Publish to Supabase Storage if post was published
     console.log('[POST /posts] Post publish status:', { published: post.published });
     if (post.published) {
-      console.log('[POST /posts] Calling triggerFrontendRebuild...');
-      triggerFrontendRebuild('post-created', siteId, { postId: post.id, postTitle: post.title }).catch(err => {
-        console.error('[POST /posts] triggerFrontendRebuild error:', err?.message || err);
+      console.log('[POST /posts] Calling publishToStorage...');
+      publishToStorage('post-created', siteId, { postId: post.id, postTitle: post.title }).catch(err => {
+        console.error('[POST /posts] publishToStorage error:', err?.message || err);
       });
     } else {
-      console.log('[POST /posts] Skipping trigger (post not published)');
+      console.log('[POST /posts] Skipping publish (post not published)');
     }
     
     // Si la sección es de tipo "thumbnails" y se proporciona thumbnailData, crear el thumbnail
@@ -2735,12 +2631,12 @@ app.put("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, asyn
     const isNowPublished = post.published;
     console.log('[PUT /posts/:id] Post publish status:', { wasPublished, isNowPublished, willTrigger: isNowPublished || (wasPublished && !isNowPublished) });
     if (isNowPublished || (wasPublished && !isNowPublished)) {
-      console.log('[PUT /posts/:id] Calling triggerFrontendRebuild...');
-      triggerFrontendRebuild('post-updated', siteId, { postId: post.id, postTitle: post.title, wasPublished, isNowPublished }).catch(err => {
-        console.error('[PUT /posts/:id] triggerFrontendRebuild error:', err?.message || err);
+      console.log('[PUT /posts/:id] Calling publishToStorage...');
+      publishToStorage('post-updated', siteId, { postId: post.id, postTitle: post.title, wasPublished, isNowPublished }).catch(err => {
+        console.error('[PUT /posts/:id] publishToStorage error:', err?.message || err);
       });
     } else {
-      console.log('[PUT /posts/:id] Skipping trigger (post not published)');
+      console.log('[PUT /posts/:id] Skipping publish (post not published)');
     }
 
     // Invalidar cache de posts para este sitio
@@ -2824,13 +2720,13 @@ app.delete("/posts/:id", adminRateLimiter, resolveSiteFromDomain, requireAuth, a
     invalidateCache(`posts:*`);
     // Ejecutar prerender local si está configurado
     triggerPrerender("post_deleted", { postId: postInfo.id, siteId });
-    // Además, disparar el rebuild remoto (GitHub Actions) para que los frontends se actualicen
+    // Publish updated content to Supabase Storage
     try {
-      triggerFrontendRebuild('post-deleted', siteId, { postId: postInfo.id }).catch(err => {
-        console.error('[DELETE /posts] triggerFrontendRebuild error:', err?.message || err);
+      publishToStorage('post-deleted', siteId, { postId: postInfo.id }).catch(err => {
+        console.error('[DELETE /posts] publishToStorage error:', err?.message || err);
       });
     } catch (err) {
-      console.error('[DELETE /posts] triggerFrontendRebuild threw:', err?.message || err);
+      console.error('[DELETE /posts] publishToStorage threw:', err?.message || err);
     }
     
     // Registrar en auditoría
