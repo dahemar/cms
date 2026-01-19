@@ -35,6 +35,7 @@ model Site {
   domain            String?          // Dominio del frontend (opcional)
   description       String?
   githubRepo        String?          // Repositorio GitHub asociado (ej: "dahemar/cineclub")
+  vercelHookUrl     String?          // Vercel Deploy Hook URL para trigger automático
   frontendProfileId Int?             // Perfil de frontend asociado (nullable para compatibilidad)
   frontendProfile   FrontendProfile? @relation(fields: [frontendProfileId], references: [id], onDelete: SetNull)
   config            SiteConfig?      // Configuración del sitio
