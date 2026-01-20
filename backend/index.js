@@ -5025,4 +5025,5 @@ if (USE_HTTPS) {
   });
 }
 
-
+// Export for Vercel serverless
+module.exports = app;
