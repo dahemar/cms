@@ -324,6 +324,32 @@ async function generateArtifacts(siteId) {
     // Generate complete bootstrap
     const bootstrap = await buildCompleteBootstrap(siteId);
     artifacts['posts_bootstrap.json'] = JSON.stringify(bootstrap, null, 2);
+
+    // Also generate a minimal bootstrap for fast initial loads
+    const minBootstrap = {
+      liveProjects: (bootstrap.liveProjects || []).map(p => ({
+        slug: p.slug,
+        title: p.title,
+        order: p.order || 0,
+        image: p.image || ''
+      })),
+      // minimal details map: include only title and a short description (first 160 chars)
+      liveDetailMap: Object.keys(bootstrap.liveDetailMap || {}).reduce((acc, k) => {
+        const d = bootstrap.liveDetailMap[k];
+        acc[k] = {
+          title: d.title,
+          description: (String(d.description || '').replace(/\s+/g, ' ').substring(0, 160)).trim()
+        };
+        return acc;
+      }, {}),
+      _meta: {
+        generatedAt: new Date().toISOString(),
+        siteId,
+        minimal: true
+      }
+    };
+
+    artifacts['posts_bootstrap.min.json'] = JSON.stringify(minBootstrap);
     
     // For cineclub (site 3), also generate posts.html
     if (Number(siteId) === 3) {

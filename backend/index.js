@@ -1754,36 +1754,46 @@ app.get("/prerender/current/:siteId", publicRateLimiter, async (req, res) => {
       return res.status(503).json({ error: "Supabase Storage not configured" });
     }
 
-    // Fast path: read version from Redis
-    let version = null;
-    if (redisClient) {
-      try {
-        version = await redisClient.get(`publish:version:${siteId}`);
-      } catch (err) {
-        console.warn(`[Prerender] Redis error reading version for site ${siteId}:`, err.message);
+    // Fast path: read current state from Redis (contains version + files map)
+    if (!redisClient) {
+      console.warn(`[Prerender] Redis not available for site ${siteId}`);
+      return res.status(503).json({ error: 'Redis not available' });
+    }
+
+    try {
+      const raw = await redisClient.get(`publish:current:${siteId}`);
+      if (!raw) {
+        console.warn(`[Prerender] No publish state in Redis for site ${siteId}`);
+        return res.status(404).json({ 
+          error: 'No published version found',
+          fallback: `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/manifest.json`
+        });
       }
-    }
 
-    if (!version) {
-      // Fallback: read from manifest (slower)
-      console.warn(`[Prerender] No Redis version for site ${siteId}, using fallback`);
-      return res.status(404).json({ 
-        error: "No published version found",
-        fallback: `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/manifest.json`
-      });
-    }
+      const state = JSON.parse(raw);
+      const version = state.version;
+      const filesMap = state.files || {};
 
-    // Build artifact URL
-    const artifactUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/posts_bootstrap.${version}.json`;
-    
-    // Return JSON with version and URL
-    // Use short TTL to allow updates to propagate quickly
-    res.set('Cache-Control', 'public, max-age=5, s-maxage=5');
-    res.json({
-      version,
-      url: artifactUrl,
-      siteId
-    });
+      // Build URLs for min and full artifacts if available
+      const urls = {};
+      if (filesMap['posts_bootstrap.min.json']) {
+        urls.min = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/${filesMap['posts_bootstrap.min.json']}`;
+      }
+      if (filesMap['posts_bootstrap.json']) {
+        urls.full = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/${filesMap['posts_bootstrap.json']}`;
+      }
+
+      // Fallback to the conventional naming if filesMap entries missing
+      if (!urls.full && version) {
+        urls.full = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/posts_bootstrap.${version}.json`;
+      }
+
+      res.set('Cache-Control', 'public, max-age=5, s-maxage=5');
+      return res.json({ version, urls, siteId });
+    } catch (err) {
+      console.error('[Prerender] Redis parse error:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
   } catch (err) {
     console.error('[Prerender] Error:', err);
     res.status(500).json({ error: "Internal server error" });
