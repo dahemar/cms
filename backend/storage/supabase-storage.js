@@ -149,6 +149,7 @@ async function getRedisState(siteId) {
  * @param {string} path - Storage path (e.g., "3/posts_bootstrap.1234.json")
  * @param {Buffer|string} content - File content
  * @param {object} options - Upload options
+ * @param {string} options.bucket - Target bucket (defaults to SUPABASE_BUCKET)
  */
 async function uploadToStorage(path, content, options = {}) {
   const supabase = getSupabaseClient();
@@ -156,6 +157,7 @@ async function uploadToStorage(path, content, options = {}) {
   const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8');
   const contentType = options.contentType || 'application/json';
   const cacheControl = options.cacheControl || 'public, max-age=31536000, immutable';
+  const bucket = options.bucket || SUPABASE_BUCKET;
 
   // If caller requested compression or the content type is JSON, compress with Brotli
   const shouldCompress = options.compress === true || contentType === 'application/json';
@@ -176,7 +178,7 @@ async function uploadToStorage(path, content, options = {}) {
     }
 
     const upsert = true;
-    const uploadUrl = new URL(`${SUPABASE_URL.replace(/\/+$/,'')}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(path)}`);
+    const uploadUrl = new URL(`${SUPABASE_URL.replace(/\/+$/,'')}/storage/v1/object/${bucket}/${encodeURIComponent(path)}`);
     if (upsert) uploadUrl.searchParams.set('upsert', 'true');
 
     const headers = {
@@ -234,7 +236,7 @@ async function uploadToStorage(path, content, options = {}) {
 
     // Fallback to SDK upload (older Node environments)
     const { data, error } = await supabase.storage
-      .from(SUPABASE_BUCKET)
+      .from(bucket)
       .upload(path, uploadBuffer, {
         contentType,
         cacheControl,
@@ -289,6 +291,8 @@ async function writeManifest(siteId) {
  * @returns {Promise<string|null>} Thumbnail URL or null on failure
  */
 async function generateAndUploadThumbnail(sourceUrl, siteId, imageName) {
+  const THUMBNAIL_BUCKET = 'thumbnails';
+  
   try {
     console.log(`[Storage] Generating thumbnail for ${imageName}...`);
     
@@ -299,14 +303,15 @@ async function generateAndUploadThumbnail(sourceUrl, siteId, imageName) {
       format: 'webp'
     });
     
-    // Upload to Supabase Storage
-    const thumbnailPath = `${siteId}/thumbnails/${imageName}.webp`;
+    // Upload to thumbnails bucket
+    const thumbnailPath = `${siteId}/${imageName}.webp`;
     await uploadToStorage(thumbnailPath, result.buffer, {
       contentType: 'image/webp',
-      cacheControl: 'public, max-age=31536000, immutable'
+      cacheControl: 'public, max-age=31536000, immutable',
+      bucket: THUMBNAIL_BUCKET
     });
     
-    const thumbnailUrl = getPublicUrl(thumbnailPath);
+    const thumbnailUrl = getPublicUrl(thumbnailPath, THUMBNAIL_BUCKET);
     console.log(`[Storage] Thumbnail uploaded: ${thumbnailUrl} (${result.width}x${result.height}, ${result.size} bytes)`);
     
     return thumbnailUrl;
@@ -390,11 +395,12 @@ async function publishArtifacts(siteId, artifacts, metadata = {}) {
 /**
  * Get public URL for a file in Supabase Storage
  * @param {string} path - Storage path
+ * @param {string} bucket - Bucket name (defaults to SUPABASE_BUCKET)
  * @returns {string}
  */
-function getPublicUrl(path) {
+function getPublicUrl(path, bucket = SUPABASE_BUCKET) {
   if (!SUPABASE_URL) return null;
-  return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${path}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
 }
 
 /**

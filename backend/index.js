@@ -560,13 +560,8 @@ async function publishToStorage(reason, siteId, meta = {}) {
   }
 
   try {
-    // Generate artifacts with thumbnail generation
-    const generateThumbnails = async (imageUrl, siteId, imageName) => {
-      const { generateAndUploadThumbnail } = require('./storage/supabase-storage');
-      return await generateAndUploadThumbnail(imageUrl, siteId, imageName);
-    };
-    
-    const artifacts = await artifactGenerator.generateArtifacts(siteId, { generateThumbnails });
+    // Generate artifacts (thumbnail generation disabled)
+    const artifacts = await artifactGenerator.generateArtifacts(siteId);
     
     // Publish to Supabase Storage (with Redis locks and state management)
     const result = await supabaseStorage.publishArtifacts(siteId, artifacts, { reason, ...meta });

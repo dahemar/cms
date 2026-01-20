@@ -6,16 +6,28 @@
  */
 
 const { PrismaClient } = require('@prisma/client');
-const { generateThumbnailBuffer } = require('./thumbnail-generator');
+// thumbnail generation removed: thumbnails not used anymore
 const prisma = new PrismaClient();
 
 const MEDIA_BASE = process.env.PRERENDER_MEDIA_BASE_URL || '';
 
-function resolveMediaUrl(url) {
+// Site-specific media base URLs (fallback for sites without MEDIA_BASE)
+const SITE_MEDIA_BASES = {
+  3: 'https://cineclub-theta.vercel.app' // cineclub
+};
+
+function resolveMediaUrl(url, siteId = null) {
   if (!url) return '';
   if (/^(https?:)?\/\//i.test(url)) return url;
-  if (MEDIA_BASE) {
-    return `${MEDIA_BASE.replace(/\/$/, '')}/${url.replace(/^\/+/, '')}`;
+  
+  // Determine base URL: explicit MEDIA_BASE, site-specific, or empty
+  let base = MEDIA_BASE;
+  if (!base && siteId && SITE_MEDIA_BASES[siteId]) {
+    base = SITE_MEDIA_BASES[siteId];
+  }
+  
+  if (base) {
+    return `${base.replace(/\/$/, '')}/${url.replace(/^\/+/, '')}`;
   }
   return url;
 }
@@ -265,7 +277,7 @@ function renderSession(post, index) {
   return `
     <section class="session" data-post-id="${post.id}" data-slug="${post.slug || ''}" data-updated-at="${post.updatedAt || ''}" data-thumb="${primaryThumb}">
       <p class="session-num">${sessionNum}</p>
-      ${horarioText ? `<p class="horario">${horarioText}</p>` : ''}
+      ${horarioText ? `<div class="horario">${horarioText}</div>` : ''}
       <h2 class="filme">${formattedTitle}</h2>
       ${description ? `<div class="descricao">${description}</div>` : ''}
       ${images.length > 0 ? `
@@ -332,31 +344,12 @@ async function generateArtifacts(siteId, options = {}) {
     const topN = 3;
     const topLiveProjects = (bootstrap.liveProjects || []).slice(0, topN);
     
-    // Generate thumbnails if function provided
-    const thumbnailMap = {};
-    if (options.generateThumbnails && typeof options.generateThumbnails === 'function') {
-      console.log(`[Artifacts] Generating thumbnails for top ${topN} posts...`);
-      for (const project of topLiveProjects) {
-        if (project.image) {
-          try {
-            const thumbUrl = await options.generateThumbnails(project.image, siteId, `${project.slug}-thumb`);
-            if (thumbUrl) {
-              thumbnailMap[project.slug] = thumbUrl;
-            }
-          } catch (err) {
-            console.error(`[Artifacts] Failed to generate thumbnail for ${project.slug}:`, err.message);
-          }
-        }
-      }
-    }
-    
     const minBootstrap = {
       liveProjects: topLiveProjects.map(p => ({
         slug: p.slug,
         title: p.title,
         order: p.order || 0,
-        image: p.image || '',
-        imageThumb: thumbnailMap[p.slug] || p.image || '' // Use thumbnail if available
+        image: p.image || ''
       })),
       // minimal details map: only for top-N posts, with truncated description
       liveDetailMap: topLiveProjects.reduce((acc, p) => {
@@ -365,8 +358,7 @@ async function generateArtifacts(siteId, options = {}) {
           acc[p.slug] = {
             title: d.title,
             description: (String(d.description || '').replace(/\s+/g, ' ').substring(0, 160)).trim(),
-            order: d.order || 0,
-            imageThumb: thumbnailMap[p.slug] // Include thumbnail in detail map
+            order: d.order || 0
           };
         }
         return acc;

@@ -48,7 +48,7 @@ function renderSession(post, index) {
   return `
     <section class="session" data-post-id="${post.id}" data-slug="${post.slug || ''}" data-updated-at="${post.updatedAt || ''}" data-thumb="${primaryThumb}">
       <p class="session-num">${sessionNum}</p>
-      ${horarioText ? `<p class="horario">${horarioText}</p>` : ''}
+      ${horarioText ? `<div class="horario">${horarioText}</div>` : ''}
       <h2 class="filme">${formattedTitle}</h2>
       ${description ? `<div class="descricao">${description}</div>` : ''}
       ${images.length > 0 ? `

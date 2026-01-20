@@ -23,6 +23,8 @@ async function run(siteId) {
 
   const version = `${Date.now()}`;
   console.log(`Generating artifacts for site ${siteId}...`);
+  
+  // Thumbnail generation disabled — generateArtifacts without thumbnail hooks
   const artifacts = await artifactGenerator.generateArtifacts(siteId);
   console.log('Artifacts generated:', Object.keys(artifacts));
 
