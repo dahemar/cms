@@ -1734,6 +1734,62 @@ app.get("/auth/verify/:email", requireAuth, async (req, res) => {
   }
 });
 
+// ============================================================
+// PUBLIC PRERENDER ENDPOINT (no auth required)
+// ============================================================
+// GET /prerender/current/:siteId - Returns current artifact URL for fast frontend fetch
+// Eliminates sequential manifest→artifact fetch by providing direct URL from Redis
+app.get("/prerender/current/:siteId", publicRateLimiter, async (req, res) => {
+  try {
+    const siteId = parseInt(req.params.siteId, 10);
+    if (!siteId) {
+      return res.status(400).json({ error: "Invalid siteId" });
+    }
+
+    // Check if Supabase Storage is configured
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'prerender';
+    
+    if (!SUPABASE_URL) {
+      return res.status(503).json({ error: "Supabase Storage not configured" });
+    }
+
+    // Fast path: read version from Redis
+    let version = null;
+    if (redisClient) {
+      try {
+        version = await redisClient.get(`publish:version:${siteId}`);
+      } catch (err) {
+        console.warn(`[Prerender] Redis error reading version for site ${siteId}:`, err.message);
+      }
+    }
+
+    if (!version) {
+      // Fallback: read from manifest (slower)
+      console.warn(`[Prerender] No Redis version for site ${siteId}, using fallback`);
+      return res.status(404).json({ 
+        error: "No published version found",
+        fallback: `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/manifest.json`
+      });
+    }
+
+    // Build artifact URL
+    const artifactUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${siteId}/posts_bootstrap.${version}.json`;
+    
+    // Return JSON with version and URL
+    // Use short TTL to allow updates to propagate quickly
+    res.set('Cache-Control', 'public, max-age=5, s-maxage=5');
+    res.json({
+      version,
+      url: artifactUrl,
+      siteId
+    });
+  } catch (err) {
+    console.error('[Prerender] Error:', err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /posts - Solo posts publicados (para frontend público)
 // GET /posts - Posts publicados (para frontend público) con búsqueda, filtrado y paginación
 app.get("/posts", publicRateLimiter, resolveSiteFromDomain, async (req, res) => {
