@@ -1747,7 +1747,7 @@ app.get("/prerender/current/:siteId", publicRateLimiter, async (req, res) => {
     }
 
     // Check if Supabase Storage is configured
-    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_URL = process.env.SUPABASE_URL ? process.env.SUPABASE_URL.trim() : null;
     const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'prerender';
     
     if (!SUPABASE_URL) {
