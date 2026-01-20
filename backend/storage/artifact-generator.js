@@ -326,20 +326,26 @@ async function generateArtifacts(siteId) {
     artifacts['posts_bootstrap.json'] = JSON.stringify(bootstrap, null, 2);
 
     // Also generate a minimal bootstrap for fast initial loads
+    // Only include top-N posts (above-the-fold), with minimal fields
+    const topN = 3;
+    const topLiveProjects = (bootstrap.liveProjects || []).slice(0, topN);
     const minBootstrap = {
-      liveProjects: (bootstrap.liveProjects || []).map(p => ({
+      liveProjects: topLiveProjects.map(p => ({
         slug: p.slug,
         title: p.title,
         order: p.order || 0,
         image: p.image || ''
       })),
-      // minimal details map: include only title and a short description (first 160 chars)
-      liveDetailMap: Object.keys(bootstrap.liveDetailMap || {}).reduce((acc, k) => {
-        const d = bootstrap.liveDetailMap[k];
-        acc[k] = {
-          title: d.title,
-          description: (String(d.description || '').replace(/\s+/g, ' ').substring(0, 160)).trim()
-        };
+      // minimal details map: only for top-N posts, with truncated description
+      liveDetailMap: topLiveProjects.reduce((acc, p) => {
+        const d = bootstrap.liveDetailMap[p.slug];
+        if (d) {
+          acc[p.slug] = {
+            title: d.title,
+            description: (String(d.description || '').replace(/\s+/g, ' ').substring(0, 160)).trim(),
+            order: d.order || 0
+          };
+        }
         return acc;
       }, {}),
       _meta: {
