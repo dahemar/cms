@@ -6,6 +6,7 @@
  */
 
 const { PrismaClient } = require('@prisma/client');
+const { generateThumbnailBuffer } = require('./thumbnail-generator');
 const prisma = new PrismaClient();
 
 const MEDIA_BASE = process.env.PRERENDER_MEDIA_BASE_URL || '';
@@ -313,9 +314,10 @@ async function generatePostsHtml(siteId, sectionId) {
 /**
  * Main function: generate all artifacts for a site
  * @param {number} siteId 
+ * @param {object} options - { generateThumbnails: function }
  * @returns {Promise<object>} Map of { filename: content }
  */
-async function generateArtifacts(siteId) {
+async function generateArtifacts(siteId, options = {}) {
   console.log(`[Artifacts] Generating artifacts for site ${siteId}`);
   
   const artifacts = {};
@@ -329,12 +331,32 @@ async function generateArtifacts(siteId) {
     // Only include top-N posts (above-the-fold), with minimal fields
     const topN = 3;
     const topLiveProjects = (bootstrap.liveProjects || []).slice(0, topN);
+    
+    // Generate thumbnails if function provided
+    const thumbnailMap = {};
+    if (options.generateThumbnails && typeof options.generateThumbnails === 'function') {
+      console.log(`[Artifacts] Generating thumbnails for top ${topN} posts...`);
+      for (const project of topLiveProjects) {
+        if (project.image) {
+          try {
+            const thumbUrl = await options.generateThumbnails(project.image, siteId, `${project.slug}-thumb`);
+            if (thumbUrl) {
+              thumbnailMap[project.slug] = thumbUrl;
+            }
+          } catch (err) {
+            console.error(`[Artifacts] Failed to generate thumbnail for ${project.slug}:`, err.message);
+          }
+        }
+      }
+    }
+    
     const minBootstrap = {
       liveProjects: topLiveProjects.map(p => ({
         slug: p.slug,
         title: p.title,
         order: p.order || 0,
-        image: p.image || ''
+        image: p.image || '',
+        imageThumb: thumbnailMap[p.slug] || p.image || '' // Use thumbnail if available
       })),
       // minimal details map: only for top-N posts, with truncated description
       liveDetailMap: topLiveProjects.reduce((acc, p) => {
@@ -343,7 +365,8 @@ async function generateArtifacts(siteId) {
           acc[p.slug] = {
             title: d.title,
             description: (String(d.description || '').replace(/\s+/g, ' ').substring(0, 160)).trim(),
-            order: d.order || 0
+            order: d.order || 0,
+            imageThumb: thumbnailMap[p.slug] // Include thumbnail in detail map
           };
         }
         return acc;

@@ -17,6 +17,9 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { PrismaClient } = require('@prisma/client');
+const { generateThumbnailBuffer } = require('./thumbnail-generator');
+const zlib = require('zlib');
+const { URL } = require('url');
 
 const prisma = new PrismaClient();
 
@@ -151,23 +154,96 @@ async function uploadToStorage(path, content, options = {}) {
   const supabase = getSupabaseClient();
   
   const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8');
-  
-  const uploadOptions = {
-    contentType: options.contentType || 'application/json',
-    cacheControl: options.cacheControl || 'public, max-age=31536000, immutable',
-    upsert: true // Overwrite if exists
-  };
+  const contentType = options.contentType || 'application/json';
+  const cacheControl = options.cacheControl || 'public, max-age=31536000, immutable';
+
+  // If caller requested compression or the content type is JSON, compress with Brotli
+  const shouldCompress = options.compress === true || contentType === 'application/json';
 
   try {
-    const { data, error } = await supabase.storage
-      .from(SUPABASE_BUCKET)
-      .upload(path, buffer, uploadOptions);
+    let uploadBuffer = buffer;
+    let contentEncoding = null;
 
-    if (error) {
-      throw new Error(`Supabase upload error: ${error.message}`);
+    if (shouldCompress) {
+      // Use a medium quality Brotli level to balance CPU/time vs size
+      uploadBuffer = zlib.brotliCompressSync(buffer, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } });
+      contentEncoding = 'br';
     }
 
-    console.log(`[Storage] Uploaded: ${path} (${buffer.length} bytes)`);
+    // Prefer direct HTTP upload so we can set Content-Encoding and other headers precisely
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set to use storage HTTP upload');
+    }
+
+    const upsert = true;
+    const uploadUrl = new URL(`${SUPABASE_URL.replace(/\/+$/,'')}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(path)}`);
+    if (upsert) uploadUrl.searchParams.set('upsert', 'true');
+
+    const headers = {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': contentType,
+      'Cache-Control': cacheControl
+    };
+    if (contentEncoding) headers['Content-Encoding'] = contentEncoding;
+
+    // Use global fetch (Node 18+) or the SDK as fallback
+    if (typeof fetch === 'function') {
+      // Try multipart/form-data upload with metadata first (helps set object metadata like content_encoding)
+      let res = null;
+      try {
+        if (typeof FormData !== 'undefined') {
+          const form = new FormData();
+          // Append file. In Node's FormData, passing a Buffer is supported and fetch will set correct headers
+          form.append('file', uploadBuffer, { filename: path, contentType });
+          form.append('cacheControl', cacheControl);
+          if (contentEncoding) form.append('metadata', JSON.stringify({ content_encoding: contentEncoding }));
+
+          res = await fetch(uploadUrl.toString(), {
+            method: 'POST',
+            // Do NOT set Content-Type here; fetch will set multipart boundary
+            headers: { Authorization: headers.Authorization },
+            body: form
+          });
+        } else {
+          // Fallback: send raw body with explicit headers
+          res = await fetch(uploadUrl.toString(), {
+            method: 'POST',
+            headers,
+            body: uploadBuffer
+          });
+        }
+      } catch (multipartErr) {
+        // If multipart attempt fails, fallback to raw upload
+        console.warn('[Storage] Multipart upload failed, falling back to raw upload:', multipartErr.message);
+        res = await fetch(uploadUrl.toString(), {
+          method: 'POST',
+          headers,
+          body: uploadBuffer
+        });
+      }
+
+      if (!res.ok) {
+        let body = null;
+        try { body = await res.text(); } catch (e) { body = '<unreadable>'; }
+        throw new Error(`Supabase HTTP upload failed: ${res.status} ${res.statusText} - ${body}`);
+      }
+
+      console.log(`[Storage] Uploaded: ${path} (${uploadBuffer.length} bytes) ${contentEncoding ? `(encoded: ${contentEncoding})` : ''}`);
+      return { path };
+    }
+
+    // Fallback to SDK upload (older Node environments)
+    const { data, error } = await supabase.storage
+      .from(SUPABASE_BUCKET)
+      .upload(path, uploadBuffer, {
+        contentType,
+        cacheControl,
+        upsert: true
+      });
+
+    if (error) throw new Error(`Supabase upload error: ${error.message}`);
+
+    console.log(`[Storage] Uploaded (sdk): ${path} (${uploadBuffer.length} bytes)`);
     return data;
   } catch (err) {
     console.error(`[Storage] Upload failed for ${path}:`, err.message);
@@ -203,6 +279,41 @@ async function writeManifest(siteId) {
   });
 
   console.log(`[Storage] Manifest written for site ${siteId}`);
+}
+
+/**
+ * Generate and upload thumbnail for an image
+ * @param {string} sourceUrl - Source image URL
+ * @param {number} siteId - Site ID for storage path
+ * @param {string} imageName - Name for the thumbnail (e.g., "session1-img1")
+ * @returns {Promise<string|null>} Thumbnail URL or null on failure
+ */
+async function generateAndUploadThumbnail(sourceUrl, siteId, imageName) {
+  try {
+    console.log(`[Storage] Generating thumbnail for ${imageName}...`);
+    
+    // Generate thumbnail buffer
+    const result = await generateThumbnailBuffer(sourceUrl, {
+      width: 480,
+      quality: 80,
+      format: 'webp'
+    });
+    
+    // Upload to Supabase Storage
+    const thumbnailPath = `${siteId}/thumbnails/${imageName}.webp`;
+    await uploadToStorage(thumbnailPath, result.buffer, {
+      contentType: 'image/webp',
+      cacheControl: 'public, max-age=31536000, immutable'
+    });
+    
+    const thumbnailUrl = getPublicUrl(thumbnailPath);
+    console.log(`[Storage] Thumbnail uploaded: ${thumbnailUrl} (${result.width}x${result.height}, ${result.size} bytes)`);
+    
+    return thumbnailUrl;
+  } catch (err) {
+    console.error(`[Storage] Failed to generate thumbnail for ${imageName}:`, err.message);
+    return null;
+  }
 }
 
 /**
@@ -302,5 +413,6 @@ module.exports = {
   getPublicUrl,
   getSiteBaseUrl,
   acquirePublishLock,
-  releasePublishLock
+  releasePublishLock,
+  generateAndUploadThumbnail
 };
