@@ -1,0 +1,10 @@
+# Excluir prisma CLI del bundle de Vercel (se ejecuta en build, no runtime)
+node_modules/prisma
+
+# Excluir engines de desarrollo que no son necesarios en serverless
+node_modules/@prisma/engines/libquery_engine-darwin*
+node_modules/@prisma/engines/libquery_engine-debian*
+node_modules/@prisma/engines/libquery_engine-linux*
+
+# Excluir binarios de desarrollo locales generados
+node_modules/.prisma/client/libquery_engine-darwin*
